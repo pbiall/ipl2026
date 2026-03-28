@@ -497,7 +497,7 @@ async function renderAdminUsers() {
   }
   el.innerHTML = allPlayers.map(p => {
     const safeName = p.name.replace(/'/g, "\'");
-    const safeEmail = (p.email||'').replace(/'/g, "\'");
+    const isMe = p.uid === currentUser?.id;
     return `
     <div class="user-card">
       <div class="uc-av" style="background:${p.color}22;color:${p.color}">${p.avatar}</div>
@@ -513,9 +513,16 @@ async function renderAdminUsers() {
           onclick="adminToggleAdmin('${p.uid}', ${p.isAdmin})">
           ${p.isAdmin ? '✅ Admin' : 'Make Admin'}
         </button>
+        <button class="uc-btn" onclick="adminPickForUser('${p.uid}', '${safeName}')">
+          🏏 Pick
+        </button>
         <button class="uc-btn" onclick="adminResetUserPreds('${p.uid}', '${safeName}')">
           Reset Preds
         </button>
+        ${!isMe ? `<button class="uc-btn" style="color:var(--red);border-color:rgba(255,87,51,0.3)"
+          onclick="adminDeleteUser('${p.uid}', '${safeName}')">
+          🗑 Delete
+        </button>` : '<button class="uc-btn" style="opacity:0.3;cursor:default">You</button>'}
       </div>
     </div>`;
   }).join('');
@@ -549,6 +556,67 @@ async function adminResetUserPreds(uid, name) {
   await renderAdminUsers();
   renderMatches(); updateHero();
   toast(`${name}'s predictions cleared`, 'warn');
+}
+
+// ── Admin: pick on behalf of a user ─────────────────────────
+async function adminPickForUser(uid, name) {
+  // Show a modal-style prompt to pick match + team
+  const matchId = prompt(`Pick for ${name}\nEnter match number (1-74):`);
+  if (!matchId || isNaN(matchId)) return;
+  const mid = parseInt(matchId);
+  const m = MATCHES.find(x => x.id === mid);
+  if (!m || m.t1 === 'TBD') { toast('Invalid match number', 'err'); return; }
+
+  const teamChoice = prompt(`Match ${mid}: ${m.t1} vs ${m.t2}\nEnter team (${m.t1} or ${m.t2}):`);
+  if (!teamChoice) return;
+  const team = teamChoice.trim().toUpperCase();
+  if (team !== m.t1 && team !== m.t2) { toast(`Must be ${m.t1} or ${m.t2}`, 'err'); return; }
+
+  // Save prediction for that user (admin bypasses lock)
+  const { error } = await sb.from('predictions').upsert(
+    { user_id: uid, match_id: mid, pick: team, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,match_id' }
+  );
+  if (error) { toast('Failed: ' + error.message, 'err'); return; }
+
+  // Recalc their points
+  const { data: preds } = await sb.from('predictions').select('match_id,pick').eq('user_id', uid);
+  if (preds) {
+    let pts = 0, corr = 0;
+    preds.forEach(p => {
+      const res = allResults[p.match_id];
+      if (!res) return;
+      const match = MATCHES.find(x => x.id === p.match_id);
+      const earned = res === 'NR' ? 0 : p.pick === res ? (match?.pl ? 20 : 10) : 0;
+      pts += earned;
+      if (earned > 0) corr++;
+    });
+    await sb.from('profiles').update({ total_pts: pts, correct: corr, predicted: preds.length }).eq('id', uid);
+  }
+
+  await renderAdminUsers();
+  toast(`✅ Picked ${team} for Match ${mid} on behalf of ${name}`);
+}
+
+// ── Admin: delete a user completely ──────────────────────────
+async function adminDeleteUser(uid, name) {
+  if (!confirm(`Delete ${name} completely?\nThis removes their account, all predictions and points. Cannot be undone.`)) return;
+  if (!confirm(`Last chance — permanently delete ${name}?`)) return;
+
+  // Delete predictions
+  await sb.from('predictions').delete().eq('user_id', uid);
+  // Delete profile
+  await sb.from('profiles').delete().eq('id', uid);
+  // Delete auth user via Supabase admin API (requires service role — soft delete via profile only)
+  // Note: full auth deletion needs service role key, so we just remove profile + predictions
+  // The user won't be able to log in meaningfully without a profile
+
+  // Remove from local cache
+  const idx = allPlayers.findIndex(p => p.uid === uid);
+  if (idx >= 0) allPlayers.splice(idx, 1);
+
+  await renderAdminUsers();
+  toast(`${name} deleted`, 'warn');
 }
 
 async function sendBroadcast(){
