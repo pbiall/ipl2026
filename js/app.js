@@ -560,26 +560,125 @@ async function adminResetUserPreds(uid, name) {
 
 // ── Admin: pick on behalf of a user ─────────────────────────
 async function adminPickForUser(uid, name) {
-  // Show a modal-style prompt to pick match + team
-  const matchId = prompt(`Pick for ${name}\nEnter match number (1-74):`);
-  if (!matchId || isNaN(matchId)) return;
-  const mid = parseInt(matchId);
+  // Build a pick modal overlay
+  const existing = document.getElementById('admin-pick-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'admin-pick-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+
+  // Build match options — show all real matches grouped, highlight locked ones
+  const matchOpts = REAL_MATCHES.map(m => {
+    const locked = isMatchLocked(m) || allResults[m.id];
+    const label = `M${m.id}: ${m.t1} vs ${m.t2} (${m.date})${locked ? ' 🔒' : ''}`;
+    return `<option value="${m.id}">${label}</option>`;
+  }).join('');
+
+  modal.innerHTML = `
+    <div style="background:#0e1120;border:1px solid rgba(245,200,66,0.3);border-radius:16px;padding:24px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1.5px;color:#f5c842;margin-bottom:4px">PICK FOR ${name.toUpperCase()}</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:20px">Admin override — bypasses lock</div>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#6b7280;display:block;margin-bottom:6px">Match</label>
+        <select id="apf-match" style="width:100%;padding:10px 12px;border-radius:9px;border:1px solid rgba(255,255,255,0.12);background:#151826;color:#e8eaf0;font-size:13px;outline:none"
+          onchange="adminPickUpdateTeams()">
+          <option value="">— Select match —</option>
+          ${matchOpts}
+        </select>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#6b7280;display:block;margin-bottom:6px">Pick Winner</label>
+        <div id="apf-teams" style="display:flex;gap:10px">
+          <div style="color:#6b7280;font-size:13px">Select a match first</div>
+        </div>
+      </div>
+
+      <input type="hidden" id="apf-uid" value="${uid}">
+      <input type="hidden" id="apf-name" value="${name}">
+      <input type="hidden" id="apf-team" value="">
+
+      <div style="display:flex;gap:10px">
+        <button onclick="adminPickSubmit()" id="apf-submit"
+          style="flex:1;padding:12px;border-radius:9px;border:none;background:#f5c842;color:#000;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1.5px;cursor:pointer">
+          CONFIRM PICK
+        </button>
+        <button onclick="document.getElementById('admin-pick-modal').remove()"
+          style="padding:12px 16px;border-radius:9px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#6b7280;cursor:pointer;font-size:14px">
+          Cancel
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  // Close on outside tap
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+function adminPickUpdateTeams() {
+  const mid = parseInt(document.getElementById('apf-match').value);
   const m = MATCHES.find(x => x.id === mid);
-  if (!m || m.t1 === 'TBD') { toast('Invalid match number', 'err'); return; }
+  const container = document.getElementById('apf-teams');
+  if (!m) { container.innerHTML = '<div style="color:#6b7280;font-size:13px">Select a match first</div>'; return; }
+  const t1 = TEAMS[m.t1], t2 = TEAMS[m.t2];
+  container.innerHTML = `
+    <button onclick="adminPickSelectTeam('${m.t1}', this)" style="flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#151826;color:#e8eaf0;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s">
+      ${t1?.e||''} ${m.t1}
+    </button>
+    <button onclick="adminPickSelectTeam('${m.t2}', this)" style="flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#151826;color:#e8eaf0;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s">
+      ${t2?.e||''} ${m.t2}
+    </button>`;
+  document.getElementById('apf-team').value = '';
+}
 
-  const teamChoice = prompt(`Match ${mid}: ${m.t1} vs ${m.t2}\nEnter team (${m.t1} or ${m.t2}):`);
-  if (!teamChoice) return;
-  const team = teamChoice.trim().toUpperCase();
-  if (team !== m.t1 && team !== m.t2) { toast(`Must be ${m.t1} or ${m.t2}`, 'err'); return; }
+function adminPickSelectTeam(team, btn) {
+  document.getElementById('apf-team').value = team;
+  document.querySelectorAll('#apf-teams button').forEach(b => {
+    b.style.background = '#151826';
+    b.style.borderColor = 'rgba(255,255,255,0.1)';
+    b.style.color = '#e8eaf0';
+  });
+  btn.style.background = '#f5c842';
+  btn.style.borderColor = '#f5c842';
+  btn.style.color = '#000';
+}
 
-  // Save prediction for that user (admin bypasses lock)
+async function adminPickSubmit() {
+  const uid  = document.getElementById('apf-uid').value;
+  const name = document.getElementById('apf-name').value;
+  const mid  = parseInt(document.getElementById('apf-match').value);
+  const team = document.getElementById('apf-team').value;
+
+  if (!mid)  { toast('Select a match', 'err'); return; }
+  if (!team) { toast('Select a team', 'err'); return; }
+
+  const btn = document.getElementById('apf-submit');
+  btn.textContent = 'SAVING...'; btn.disabled = true;
+
+  // Admin uses upsert — bypasses lock completely
   const { error } = await sb.from('predictions').upsert(
     { user_id: uid, match_id: mid, pick: team, updated_at: new Date().toISOString() },
     { onConflict: 'user_id,match_id' }
   );
-  if (error) { toast('Failed: ' + error.message, 'err'); return; }
 
-  // Recalc their points
+  if (error) {
+    console.error('adminPickSubmit:', error.message);
+    // RLS may block inserting for other users — show helpful message
+    if (error.message.includes('row-level security') || error.code === '42501') {
+      toast('Run the SQL fix in Supabase first — see admin panel', 'err');
+    } else {
+      toast('Failed: ' + error.message, 'err');
+    }
+    btn.textContent = 'CONFIRM PICK'; btn.disabled = false;
+    return;
+  }
+
+  // Recalc points for that user
   const { data: preds } = await sb.from('predictions').select('match_id,pick').eq('user_id', uid);
   if (preds) {
     let pts = 0, corr = 0;
@@ -588,12 +687,12 @@ async function adminPickForUser(uid, name) {
       if (!res) return;
       const match = MATCHES.find(x => x.id === p.match_id);
       const earned = res === 'NR' ? 0 : p.pick === res ? (match?.pl ? 20 : 10) : 0;
-      pts += earned;
-      if (earned > 0) corr++;
+      pts += earned; if (earned > 0) corr++;
     });
     await sb.from('profiles').update({ total_pts: pts, correct: corr, predicted: preds.length }).eq('id', uid);
   }
 
+  document.getElementById('admin-pick-modal').remove();
   await renderAdminUsers();
   toast(`✅ Picked ${team} for Match ${mid} on behalf of ${name}`);
 }
