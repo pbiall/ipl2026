@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PREDICT XI — IPL 2026 Prediction League</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5c842">
+<meta name="mobile-web-app-capable" content="yes">
+
+<!-- iOS / Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Predict XI">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- Android splash -->
+<meta name="application-name" content="Predict XI">
+<meta name="msapplication-TileColor" content="#f5c842">
+<meta name="msapplication-TileImage" content="icons/icon-192.png">
+
+<!-- SEO / share preview -->
+<meta name="description" content="IPL 2026 Prediction League — Pick match winners, earn points, top the leaderboard.">
+<meta property="og:title" content="PREDICT XI — IPL 2026">
+<meta property="og:description" content="Pick match winners. Earn points. Dominate the leaderboard.">
+<meta property="og:image" content="icons/icon-512.png">
+
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ========== AUTH SCREEN ========== -->
+<div id="auth-screen">
+  <div class="auth-bg"></div>
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-icon">🏏</div>
+      <div class="auth-title">PREDICT XI</div>
+      <div class="auth-sub">IPL 2026 · Prediction League</div>
+    </div>
+
+    <!-- TAB SWITCHER -->
+    <div class="auth-tabs">
+      <button class="atab on" id="tab-login" onclick="switchAuthTab('login')">Sign In</button>
+      <button class="atab" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</button>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-login">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" />
+      </div>
+      <div class="auth-err" id="login-err"></div>
+      <button class="auth-btn" onclick="doLogin()">
+        <span id="login-btn-txt">Sign In</span>
+        <span id="login-spinner" class="spinner hidden"></span>
+      </button>
+      <div class="auth-divider">or</div>
+      <button class="auth-btn-google" onclick="doGoogleAuth()">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+    </div>
+
+    <!-- SIGNUP FORM -->
+    <div id="form-signup" class="hidden">
+      <div class="field">
+        <label>Display Name</label>
+        <input type="text" id="signup-name" placeholder="CricketFan99" maxlength="20" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="signup-email" placeholder="you@example.com" />
+      </div>
+      <div class="field">
+        <label>Password <span style="color:var(--muted);font-weight:400">(min 6 chars)</span></label>
+        <input type="password" id="signup-password" placeholder="••••••••" />
+      </div>
+      <div class="auth-err" id="signup-err"></div>
+      <button class="auth-btn" onclick="doSignup()">
+        <span id="signup-btn-txt">Create Account</span>
+        <span id="signup-spinner" class="spinner hidden"></span>
+      </button>
+      <div class="auth-divider">or</div>
+      <button class="auth-btn-google" onclick="doGoogleAuth()">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========== APP (shown after login) ========== -->
+<div id="app-screen" class="hidden">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="hdr-in">
+      <div class="logo">
+        <div class="logo-icon">🏏</div>
+        <div><div class="logo-t">PREDICT XI</div><div class="logo-s">IPL 2026</div></div>
+      </div>
+      <div class="nav" id="main-nav">
+        <button class="ntab on" onclick="go('predict',this)">Predict</button>
+        <button class="ntab" onclick="go('leaderboard',this)">Leaderboard</button>
+        <button class="ntab" onclick="go('stats',this)">My Stats</button>
+        <button class="ntab" onclick="go('rules',this)">Rules</button>
+        <button class="ntab admin-only hidden" id="admin-nav-btn" onclick="go('admin',this)">⚙ Admin</button>
+      </div>
+      <div class="hdr-right">
+        <div class="pts-pill" id="hdr-pts">0 PTS</div>
+        <div class="user-menu" id="user-menu-btn" onclick="toggleUserMenu()">
+          <div class="user-avatar" id="hdr-avatar">?</div>
+          <div class="user-name" id="hdr-name">User</div>
+          <span style="color:var(--muted);font-size:10px">▼</span>
+        </div>
+        <div class="user-dropdown hidden" id="user-dropdown">
+          <div class="ud-name" id="ud-name"></div>
+          <div class="ud-email" id="ud-email"></div>
+          <div class="ud-divider"></div>
+          <button class="ud-btn" onclick="go('stats',document.querySelector('.ntab:nth-child(3)'))">My Stats</button>
+          <button class="ud-btn" onclick="doLogout()">Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- PREDICT -->
+    <div id="page-predict" class="page on">
+      <div class="hero">
+        <div class="hero-badge">🔥 TATA IPL 2026 · Season Active · RCB Defending Champions</div>
+        <h1>PICK YOUR <span>WINNERS.</span></h1>
+        <p>One prediction per match — pick who wins. 10 pts correct, ×2 in playoffs. Lock it in before toss.</p>
+        <div class="hero-stats">
+          <div><div class="hs-v">84</div><div class="hs-l">Matches</div></div>
+          <div><div class="hs-v" id="hs-pred">0</div><div class="hs-l">Predicted</div></div>
+          <div><div class="hs-v" id="hs-pts">0</div><div class="hs-l">My Points</div></div>
+          <div><div class="hs-v" id="hs-acc">—</div><div class="hs-l">Accuracy</div></div>
+        </div>
+      </div>
+      <div class="ticker"><div class="tk-lbl">🔴 LIVE</div><div class="tk-txt" id="ticker-txt"></div></div>
+      <div class="filters">
+        <button class="fbtn on" onclick="setFilter('all',this)">All (74)</button>
+        <button class="fbtn" onclick="setFilter('live',this)">🔴 Live</button>
+        <button class="fbtn" onclick="setFilter('upcoming',this)">📅 Open</button>
+        <button class="fbtn" onclick="setFilter('predicted',this)">✅ Predicted</button>
+        <button class="fbtn" onclick="setFilter('unpredicted',this)">⚡ Not Yet</button>
+        <button class="fbtn" onclick="setFilter('completed',this)">🏁 Results</button>
+      </div>
+      <div id="matches-out"></div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div id="page-leaderboard" class="page">
+      <div class="sec"><div class="sec-t">PREDICTION <span>LEADERBOARD</span></div><div class="sec-sub">IPL 2026 · All Players</div></div>
+      <div class="lb-you">
+        <div class="lb-rank-big" id="lb-rank">—</div>
+        <div>
+          <div style="font-size:16px;font-weight:700" id="lb-myname">Player</div>
+          <div class="lb-pts-big" id="lb-pts">0 PTS</div>
+          <div class="lb-sub" id="lb-sub">0 correct · 0 predicted</div>
+        </div>
+      </div>
+      <div class="lb-card">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th>Correct</th><th>Predicted</th><th>Points</th></tr></thead>
+          <tbody id="lb-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div id="page-stats" class="page">
+      <div class="sec"><div class="sec-t">MY <span>STATS</span></div><div class="sec-sub">Season 2026</div></div>
+      <div class="stats-grid">
+        <div class="scard"><div class="sc-lbl">Total Points</div><div class="sc-val" id="ms-pts">0</div><div class="sc-sub">+10 per correct</div></div>
+        <div class="scard"><div class="sc-lbl">Predicted</div><div class="sc-val" id="ms-pred">0</div><div class="sc-sub">of 74 matches</div></div>
+        <div class="scard"><div class="sc-lbl">Correct</div><div class="sc-val" id="ms-corr">0</div><div class="sc-sub">results in</div></div>
+        <div class="scard"><div class="sc-lbl">Accuracy</div><div class="sc-val" id="ms-acc">—</div><div class="sc-sub">of settled picks</div></div>
+        <div class="scard"><div class="sc-lbl">Best Streak</div><div class="sc-val" id="ms-str">0</div><div class="sc-sub">consecutive wins</div></div>
+        <div class="scard"><div class="sc-lbl">Your Rank</div><div class="sc-val" id="ms-rank">—</div><div class="sc-sub">on leaderboard</div></div>
+      </div>
+      <div class="sec" style="margin-bottom:10px"><div class="sec-t" style="font-size:18px">Streak <span style="font-size:13px;font-weight:400;color:var(--muted)">(last 20 settled)</span></div></div>
+      <div class="streak-row" id="streak-row"></div>
+      <div class="sec" style="margin-bottom:12px"><div class="sec-t" style="font-size:18px">Prediction History</div></div>
+      <div class="hist-list" id="hist-list"><div style="color:var(--muted);font-size:13px;padding:10px 0">No predictions yet.</div></div>
+    </div>
+
+    <!-- RULES -->
+    <div id="page-rules" class="page">
+      <div class="sec"><div class="sec-t">SCORING <span>RULES</span></div></div>
+      <div class="rules-grid">
+        <div class="rc"><div class="rc-pt">+10</div><div class="rc-d">Correct winner prediction</div></div>
+        <div class="rc"><div class="rc-pt" style="color:var(--red)">0</div><div class="rc-d">Wrong prediction — no penalty</div></div>
+        <div class="rc"><div class="rc-pt" style="color:var(--muted)">0</div><div class="rc-d">Abandoned / No Result match</div></div>
+        <div class="rc"><div class="rc-pt" style="color:var(--green)">×2</div><div class="rc-d">Qualifier 1, 2, Eliminator & Final</div></div>
+      </div>
+      <div class="sec" style="margin-bottom:12px"><div class="sec-t" style="font-size:18px">How It Works</div></div>
+      <div class="rnote">
+        <ul>
+          <li>Pick one team as your winner before each match — that's all.</li>
+          <li>Prediction window locks 10 minutes before toss.</li>
+          <li>Points awarded automatically once admin enters the result.</li>
+          <li>Playoff matches (Q1, Q2, Eliminator, Final) score 2× points.</li>
+          <li>No negative points — wrong predictions score 0.</li>
+          <li>Leaderboard updates in real-time for all players.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="page-admin" class="page">
+      <div class="sec"><div class="sec-t">ADMIN <span>PANEL</span></div><div class="sec-sub admin-badge-lbl">🔐 Admin Only</div></div>
+
+      <!-- ADMIN TABS -->
+      <div class="admin-tabs">
+        <button class="admin-stab on" onclick="switchAdminTab('results',this)">📋 Enter Results</button>
+        <button class="admin-stab" onclick="switchAdminTab('manage',this)">👥 Manage Users</button>
+        <button class="admin-stab" onclick="switchAdminTab('matches',this)">⚙ Match Status</button>
+        <button class="admin-stab" onclick="switchAdminTab('broadcast',this)">📢 Broadcast</button>
+      </div>
+
+      <!-- RESULTS TAB -->
+      <div id="admin-results" class="admin-section on">
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Tap winning team to record result. You can overwrite any result at any time — points recalculate instantly.</p>
+        <div class="filters" style="margin-bottom:16px">
+          <button class="fbtn on" onclick="setAdminFilter('all',this)">All</button>
+          <button class="fbtn" onclick="setAdminFilter('live',this)">🔴 Live</button>
+          <button class="fbtn" onclick="setAdminFilter('pending',this)">⏳ Pending</button>
+          <button class="fbtn" onclick="setAdminFilter('done',this)">✅ Has Result</button>
+        </div>
+        <div class="admin-grid" id="admin-out"></div>
+      </div>
+
+      <!-- MANAGE USERS TAB -->
+      <div id="admin-manage" class="admin-section">
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">View all registered players. Promote to admin or remove their predictions.</p>
+        <div class="admin-grid" id="admin-users"></div>
+      </div>
+
+      <!-- MATCH STATUS TAB -->
+      <div id="admin-matches" class="admin-section">
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Change match status — set any match to Live, Upcoming, or Locked (no more predictions).</p>
+        <div class="admin-grid" id="admin-match-status"></div>
+      </div>
+
+      <!-- BROADCAST TAB -->
+      <div id="admin-broadcast" class="admin-section">
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Send a site-wide announcement banner visible to all users.</p>
+        <div class="broadcast-form">
+          <textarea id="broadcast-msg" placeholder="e.g. Match 5 result corrected — points updated!" rows="3"></textarea>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="auth-btn" style="max-width:180px" onclick="sendBroadcast()">📢 Broadcast</button>
+            <button class="auth-btn" style="max-width:180px;background:var(--red)" onclick="clearBroadcast()">Clear Banner</button>
+          </div>
+        </div>
+        <div class="sec" style="margin-top:24px;margin-bottom:12px"><div class="sec-t" style="font-size:18px">Reset Options</div></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="danger-btn" onclick="adminResetAllResults()">🗑 Clear ALL Results</button>
+          <button class="danger-btn" onclick="adminResetAllPredictions()">🗑 Clear ALL Predictions</button>
+          <button class="danger-btn" onclick="adminResetSeason()">⚠ Full Season Reset</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div><!-- .main -->
+
+  <!-- ANNOUNCEMENT BANNER -->
+  <div class="broadcast-banner hidden" id="broadcast-banner">
+    <span id="broadcast-text"></span>
+    <button onclick="dismissBanner()" style="background:none;border:none;color:inherit;cursor:pointer;margin-left:12px;font-size:16px">✕</button>
+  </div>
+
+</div><!-- #app-screen -->
+
+<div class="toast" id="toast"></div>
+
+<!-- SUPABASE -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+
+<!-- PWA Service Worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.log('SW failed:', err));
+    });
+  }
+
+  // Show install prompt on Android (iOS shows automatically via apple-mobile-web-app-capable)
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Show install banner after login
+    setTimeout(() => {
+      if (deferredPrompt && document.getElementById('app-screen') && !document.getElementById('app-screen').classList.contains('hidden')) {
+        showInstallBanner();
+      }
+    }, 8000);
+  });
+
+  function showInstallBanner() {
+    if (localStorage.getItem('pwa-dismissed')) return;
+    const banner = document.createElement('div');
+    banner.id = 'install-banner';
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:24px">📲</span>
+        <div>
+          <div style="font-weight:700;font-size:13px">Install Predict XI</div>
+          <div style="font-size:11px;opacity:0.8">Add to home screen for the best experience</div>
+        </div>
+        <button onclick="doInstall()" style="margin-left:auto;background:#f5c842;color:#000;border:none;padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;white-space:nowrap">Install</button>
+        <button onclick="dismissInstall()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:18px;opacity:0.6">✕</button>
+      </div>`;
+    banner.style.cssText = 'position:fixed;bottom:72px;left:12px;right:12px;background:#1c2036;border:1px solid rgba(245,200,66,0.3);border-radius:14px;padding:14px 16px;z-index:998;box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:slideUp .3s ease';
+    document.body.appendChild(banner);
+  }
+
+  function doInstall() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => { deferredPrompt = null; dismissInstall(); });
+    }
+  }
+
+  function dismissInstall() {
+    localStorage.setItem('pwa-dismissed', '1');
+    document.getElementById('install-banner')?.remove();
+  }
+</script>
+
+<style>
+@keyframes slideUp { from { transform:translateY(20px); opacity:0 } to { transform:translateY(0); opacity:1 } }
+</style>
+</body>
+</html>
