@@ -797,8 +797,85 @@ async function doSignup(){
   } else if(data.user) await onLogin(data.user);
 }
 
+async function doResetPassword() {
+  const email = document.getElementById('reset-email').value.trim();
+  const errEl = document.getElementById('reset-err');
+  errEl.textContent = ''; errEl.style.color = 'var(--red)';
+  if (!email) { errEl.textContent = 'Enter your email address.'; return; }
+
+  document.getElementById('reset-btn-txt').textContent = 'Sending...';
+  document.getElementById('reset-spinner').classList.remove('hidden');
+  document.querySelector('#form-reset .auth-btn').disabled = true;
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+
+  document.getElementById('reset-btn-txt').textContent = 'Send Reset Link';
+  document.getElementById('reset-spinner').classList.add('hidden');
+  document.querySelector('#form-reset .auth-btn').disabled = false;
+
+  if (error) { errEl.textContent = error.message; return; }
+  errEl.style.color = 'var(--green)';
+  errEl.textContent = '✅ Reset link sent! Check your email.';
+}
+
+function showResetForm() {
+  document.getElementById('form-login').classList.add('hidden');
+  document.getElementById('form-signup').classList.add('hidden');
+  document.getElementById('form-reset').classList.remove('hidden');
+  document.getElementById('tab-login').classList.remove('on');
+  document.getElementById('tab-signup').classList.remove('on');
+  document.getElementById('reset-err').textContent = '';
+}
+
+function showLoginForm() {
+  document.getElementById('form-reset').classList.add('hidden');
+  document.getElementById('form-login').classList.remove('hidden');
+  document.getElementById('tab-login').classList.add('on');
+  document.getElementById('tab-signup').classList.remove('on');
+}
+
 async function doGoogleAuth(){
   await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.href}});
+}
+
+function showResetForm(){
+  document.getElementById('form-login').classList.add('hidden');
+  document.getElementById('form-reset').classList.remove('hidden');
+  // Pre-fill email if already typed
+  const email = document.getElementById('login-email').value;
+  if(email) document.getElementById('reset-email').value = email;
+}
+
+function showLoginForm(){
+  document.getElementById('form-reset').classList.add('hidden');
+  document.getElementById('form-login').classList.remove('hidden');
+}
+
+async function doReset(){
+  const email = document.getElementById('reset-email').value.trim();
+  const errEl = document.getElementById('reset-err');
+  errEl.textContent = '';
+  errEl.style.color = 'var(--red)';
+  if(!email){ errEl.textContent = 'Enter your email address.'; return; }
+  
+  setResetLoading(true);
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+  setResetLoading(false);
+  
+  if(error){ errEl.textContent = error.message; return; }
+  errEl.style.color = 'var(--green)';
+  errEl.textContent = '✅ Reset link sent! Check your email.';
+  document.getElementById('reset-btn-txt').textContent = 'Email Sent!';
+}
+
+function setResetLoading(on){
+  document.getElementById('reset-btn-txt').textContent = on ? 'Sending...' : 'Send Reset Link';
+  document.getElementById('reset-spinner').classList.toggle('hidden', !on);
+  document.querySelector('#form-reset .auth-btn').disabled = on;
 }
 
 async function doLogout(){

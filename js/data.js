@@ -100,20 +100,24 @@ const MATCHES = [
 
 const REAL_MATCHES = MATCHES.filter(m => m.t1 !== 'TBD');
 
-// Lock 1 minute before toss
-const LOCK_BUFFER_MS = 60 * 1000;
-function matchLockTime(m) { return new Date(m.tossTime).getTime() - LOCK_BUFFER_MS; }
-function isMatchLocked(m) { return Date.now() >= matchLockTime(m); }
-function secsUntilLock(m) { return Math.max(0, Math.floor((matchLockTime(m) - Date.now()) / 1000)); }
+// Predictions lock at MATCH START TIME (toss + 30 min)
+// tossTime in data = 30 min before match start
+// So matchStart = tossTime + 30min, lock = matchStart (no buffer)
+const TOSS_TO_START_MS = 30 * 60 * 1000; // 30 min toss → match start
+function matchStartTime(m) { return new Date(m.tossTime).getTime() + TOSS_TO_START_MS; }
+function matchLockTime(m)  { return matchStartTime(m); }  // lock = match start
+function isMatchLocked(m)  { return Date.now() >= matchLockTime(m); }
+function secsUntilLock(m)  { return Math.max(0, Math.floor((matchLockTime(m) - Date.now()) / 1000)); }
 
 function matchTimeLabel(m) {
-  const toss = new Date(m.tossTime);
+  // Show MATCH START time (toss + 30 min) in user's local timezone
+  const start = new Date(new Date(m.tossTime).getTime() + TOSS_TO_START_MS);
   const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const timeStr = toss.toLocaleTimeString('en-US', {
+  const timeStr = start.toLocaleTimeString('en-US', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTZ
   });
-  const tzLabel = toss.toLocaleTimeString('en-US', {
+  const tzLabel = start.toLocaleTimeString('en-US', {
     timeZoneName: 'short', timeZone: userTZ
   }).split(' ').pop();
-  return timeStr + ' ' + tzLabel + ' (Toss)';
+  return timeStr + ' ' + tzLabel + ' (Match Start · Locks at start)';
 }
