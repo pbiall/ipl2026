@@ -758,11 +758,52 @@ async function adminResetSeason(){
 }
 
 // ── Auth ──────────────────────────────────────────────────────
+function showForgotPassword() {
+  // Hide all forms
+  document.getElementById('form-login').classList.add('hidden');
+  document.getElementById('form-signup').classList.add('hidden');
+  document.getElementById('form-forgot').classList.remove('hidden');
+  // Update tabs
+  document.getElementById('tab-login').classList.remove('on');
+  document.getElementById('tab-signup').classList.remove('on');
+  document.getElementById('forgot-err').textContent = '';
+  document.getElementById('forgot-err').style.color = 'var(--red)';
+}
+
+async function doForgotPassword() {
+  const email = document.getElementById('forgot-email').value.trim();
+  const errEl = document.getElementById('forgot-err');
+  errEl.textContent = '';
+  if (!email) { errEl.textContent = 'Please enter your email.'; return; }
+
+  document.getElementById('forgot-btn-txt').textContent = 'Sending...';
+  document.getElementById('forgot-spinner').classList.remove('hidden');
+  document.querySelector('#form-forgot .auth-btn').disabled = true;
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://pbiall.github.io/ipl2026/'
+  });
+
+  document.getElementById('forgot-btn-txt').textContent = 'Send Reset Link';
+  document.getElementById('forgot-spinner').classList.add('hidden');
+  document.querySelector('#form-forgot .auth-btn').disabled = false;
+
+  if (error) {
+    errEl.textContent = error.message;
+  } else {
+    errEl.style.color = 'var(--green)';
+    errEl.textContent = '✅ Reset link sent! Check your email.';
+  }
+}
+
 function switchAuthTab(tab){
   ['login','signup'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('on',t===tab);
     document.getElementById('form-'+t).classList.toggle('hidden',t!==tab);
   });
+  // Hide forgot password form
+  const forgot = document.getElementById('form-forgot');
+  if (forgot) forgot.classList.add('hidden');
 }
 
 async function doLogin(){
