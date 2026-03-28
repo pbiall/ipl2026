@@ -2,12 +2,12 @@
   "name": "PREDICT XI — IPL 2026",
   "short_name": "Predict XI",
   "description": "IPL 2026 Prediction League — Pick match winners, earn points, top the leaderboard.",
-  "start_url": "/",
+  "start_url": "/ipl2026/",
   "display": "standalone",
   "background_color": "#07080f",
   "theme_color": "#f5c842",
   "orientation": "portrait-primary",
-  "scope": "/",
+  "scope": "/ipl2026/",
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -22,27 +22,5 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow"
-    }
-  ],
-  "categories": ["sports", "games", "entertainment"],
-  "shortcuts": [
-    {
-      "name": "Predict Matches",
-      "short_name": "Predict",
-      "url": "/?tab=predict",
-      "description": "Pick your winners"
-    },
-    {
-      "name": "Leaderboard",
-      "short_name": "Standings",
-      "url": "/?tab=leaderboard",
-      "description": "See who's winning"
-    }
-  ]
+  "categories": ["sports", "games", "entertainment"]
 }
