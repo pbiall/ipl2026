@@ -247,13 +247,37 @@ function renderMatches() {
     {label:'PHASE 3 · Apr 28 – May 18', ids:rng(51,74)},
   ];
   let html = '';
-  phases.forEach(ph => {
-    const ms = vis.filter(m=>ph.ids.includes(m.id));
-    if (!ms.length) return;
-    html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
-    ms.forEach(m => { html += matchCard(m); });
-    html += '</div>';
-  });
+
+  if (activeFilt === 'all') {
+    // Upcoming/live first, completed at bottom
+    const notDone = vis.filter(m => !allResults[m.id]);
+    const done    = vis.filter(m => !!allResults[m.id]);
+
+    if (notDone.length) {
+      phases.forEach(ph => {
+        const ms = notDone.filter(m => ph.ids.includes(m.id));
+        if (!ms.length) return;
+        html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
+        ms.forEach(m => { html += matchCard(m); });
+        html += '</div>';
+      });
+    }
+
+    if (done.length) {
+      html += `<div class="phase-hdr" style="margin-top:24px">🏁 COMPLETED MATCHES</div><div class="grid">`;
+      [...done].reverse().forEach(m => { html += matchCard(m); });
+      html += '</div>';
+    }
+  } else {
+    phases.forEach(ph => {
+      const ms = vis.filter(m=>ph.ids.includes(m.id));
+      if (!ms.length) return;
+      html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
+      ms.forEach(m => { html += matchCard(m); });
+      html += '</div>';
+    });
+  }
+
   if (!html) html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No matches here.</div>`;
   document.getElementById('matches-out').innerHTML = html;
 }
