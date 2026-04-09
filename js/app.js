@@ -4,7 +4,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_cV0zIPW01Dd5sDbkK7YMOQ_twd3V4Be';
 const ADMIN_EMAILS      = ['allservices2022@outlook.com'];
 
 const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  }
+});
 
 // ── State ────────────────────────────────────────────────────
 let currentUser   = null;
@@ -25,6 +31,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   sb.auth.onAuthStateChange(async (ev, session) => {
     if (ev === 'SIGNED_IN' && session) await onLogin(session.user);
+    else if (ev === 'TOKEN_REFRESHED' && session) {
+      // Silently keep currentUser up to date — no full reload needed
+      currentUser = session.user;
+    }
     else if (ev === 'SIGNED_OUT') { showScreen('auth'); stopClock(); }
   });
 });
@@ -106,10 +116,22 @@ async function loadBroadcast() {
 
 // ── Save prediction to Supabase ──────────────────────────────
 async function savePrediction(matchId, team) {
-  await sb.from('predictions').upsert(
+  // Ensure session is fresh before writing — prevents silent failures after long idle
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    toast('Session expired — please sign in again', 'err');
+    showScreen('auth');
+    return;
+  }
+  const { error } = await sb.from('predictions').upsert(
     { user_id: currentUser.id, match_id: matchId, pick: team, updated_at: new Date().toISOString() },
     { onConflict: 'user_id,match_id' }
   );
+  if (error) {
+    toast('Pick not saved — ' + error.message, 'err');
+    console.error('savePrediction:', error);
+    return;
+  }
   await refreshMyStats();
 }
 
@@ -434,11 +456,7 @@ function renderStats() {
 function renderAdmin() { renderAdminResults(); renderAdminUsers(); renderAdminMatchStatus(); }
 
 function renderAdminResults() {
-  let ms=REAL_MATCHES;
-  if(adminFilt==='live')    ms=ms.filter(m=>!allResults[m.id]&&secsUntilLock(m)<7200);
-  else if(adminFilt==='pending') ms=ms.filter(m=>!allResults[m.id]);
-  else if(adminFilt==='done')    ms=ms.filter(m=>!!allResults[m.id]);
-  document.getElementById('admin-out').innerHTML=ms.map(m=>{
+  function cardHtml(m) {
     const t1=TEAMS[m.t1],t2=TEAMS[m.t2],res=allResults[m.id];
     return `<div class="ac">
       <div class="ac-title">Match ${m.id} · ${m.t1} vs ${m.t2}</div>
@@ -451,7 +469,25 @@ function renderAdminResults() {
       </div>
       ${res?`<div style="font-size:11px;margin-top:8px;color:var(--green)">✅ Winner: <b>${res}</b></div>`:''}
     </div>`;
-  }).join('');
+  }
+
+  if (adminFilt === 'all') {
+    const pending   = REAL_MATCHES.filter(m => !allResults[m.id]);
+    const completed = REAL_MATCHES.filter(m =>  allResults[m.id]);
+    let html = pending.map(cardHtml).join('');
+    if (completed.length) {
+      html += `<div class="phase-hdr" style="margin:20px 0 10px">🏁 COMPLETED (${completed.length})</div>`;
+      html += completed.map(cardHtml).join('');
+    }
+    document.getElementById('admin-out').innerHTML = html;
+    return;
+  }
+
+  let ms = REAL_MATCHES;
+  if      (adminFilt==='live')    ms = ms.filter(m=>!allResults[m.id]&&secsUntilLock(m)<7200);
+  else if (adminFilt==='pending') ms = ms.filter(m=>!allResults[m.id]);
+  else if (adminFilt==='done')    ms = ms.filter(m=>!!allResults[m.id]);
+  document.getElementById('admin-out').innerHTML = ms.map(cardHtml).join('');
 }
 
 async function adminSetResult(mid, winner) {
@@ -483,8 +519,12 @@ function setAdminFilter(f,btn){
 }
 
 function renderAdminMatchStatus() {
-  document.getElementById('admin-match-status').innerHTML=REAL_MATCHES.map(m=>{
-    const locked=isMatchLocked(m),res=allResults[m.id];
+  // Pending/live matches first, completed (result entered) at the bottom
+  const pending   = REAL_MATCHES.filter(m => !allResults[m.id]);
+  const completed = REAL_MATCHES.filter(m =>  allResults[m.id]);
+
+  function cardHtml(m) {
+    const locked = isMatchLocked(m), res = allResults[m.id];
     return `<div class="ac">
       <div class="ac-title">Match ${m.id} · ${m.t1} vs ${m.t2}</div>
       <div class="ac-sub">${m.date} · ${matchTimeLabel(m)}</div>
@@ -496,7 +536,14 @@ function renderAdminMatchStatus() {
         <button class="arbtn" onclick="adminForceOpen(${m.id})">🔓 Force Open</button>
       </div>
     </div>`;
-  }).join('');
+  }
+
+  let html = pending.map(cardHtml).join('');
+  if (completed.length) {
+    html += `<div class="phase-hdr" style="margin:20px 0 10px">🏁 COMPLETED (${completed.length})</div>`;
+    html += completed.map(cardHtml).join('');
+  }
+  document.getElementById('admin-match-status').innerHTML = html || '<div style="color:var(--muted);font-size:13px;padding:12px 0">No matches.</div>';
 }
 
 function adminForceLock(mid){
