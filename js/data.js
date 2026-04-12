@@ -100,7 +100,7 @@ const MATCHES = [
   {id:74, t1:'TBD', t2:'TBD', date:'31 May', tossTime:isoIST('2026-05-31',19,30), venue:'TBD', pl:true, label:'🏆 FINAL'},
 ];
 
-const REAL_MATCHES = MATCHES.filter(m => m.t1 !== 'TBD');
+const REAL_MATCHES = [...MATCHES]; // includes playoffs; TBD ones show as 'Coming Soon' until admin sets teams
 
 const LOCK_BUFFER_MS = 0; // Lock at match start time
 

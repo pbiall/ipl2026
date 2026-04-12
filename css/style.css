@@ -303,3 +303,15 @@ tr.you-row td{background:rgba(245,200,66,0.04)}
 .cb-outcome.win{color:var(--green)}
 .cb-outcome.loss{color:var(--red)}
 .cb-outcome.neutral{color:var(--muted)}
+
+/* ── Pick Stats (% bar + post-lock reveal) ─────────────────── */
+.pick-stats{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06)}
+.ps-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.ps-bar{display:flex;height:6px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,0.07)}
+.ps-fill{height:100%;transition:width .5s ease}
+.ps-t1{background:var(--gold)}
+.ps-t2{background:#4da6ff}
+.ps-names{display:flex;justify-content:space-between;margin-top:8px;gap:8px}
+.ps-side{flex:1;display:flex;flex-direction:column;gap:4px}
+.ps-avatars{display:flex;flex-wrap:wrap;gap:4px}
+.ps-avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;cursor:default;border:1px solid rgba(255,255,255,0.1)}

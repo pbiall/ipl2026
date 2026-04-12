@@ -18,6 +18,8 @@ let isAdmin       = false;
 let myPredictions = {};  // { matchId: teamCode }
 let allResults    = {};  // { matchId: teamCode|'NR' }
 let allPlayers    = [];
+let allPickStats  = {};  // { matchId: { t1: N, t2: N, total: N } } — aggregate counts
+let allPickNames  = {};  // { matchId: { teamCode: [{name,avatar,color}] } } — revealed post-lock
 let activeFilt    = 'all';
 let adminFilt     = 'all';
 let clockInterval = null;
@@ -42,6 +44,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function onLogin(user) {
   currentUser = user;
   isAdmin = ADMIN_EMAILS.includes(user.email);
+  await loadPlayoffOverrides(); // apply any saved playoff matchup overrides before rendering
   await loadAllData();
   renderApp();
   showScreen('app');
@@ -51,13 +54,47 @@ async function onLogin(user) {
 
 // ── Realtime subscriptions ───────────────────────────────────
 function subscribeToUpdates() {
+  // Remove any existing channels to avoid duplicates on re-login
+  sb.getChannels().forEach(ch => sb.removeChannel(ch));
+
   // Results change → refresh cards + hero for everyone
   sb.channel('results-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'results' }, async () => {
       await loadResults();
       renderMatches();
       updateHero();
-      if (document.getElementById('page-leaderboard').classList.contains('on')) renderLeaderboard();
+      const lbVisible = document.getElementById('page-leaderboard').classList.contains('on');
+      const statsVisible = document.getElementById('page-stats').classList.contains('on');
+      if (lbVisible) await renderLeaderboard();
+      if (statsVisible) await renderStats();
+    })
+    .subscribe();
+
+  // Playoff config change → reload overrides and re-render matches for all users
+  sb.channel('playoff-channel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'playoff_config' }, async () => {
+      await loadPlayoffOverrides();
+      renderMatches();
+      if (document.getElementById('page-admin')?.classList.contains('on')) renderAdminPlayoffs();
+    })
+    .subscribe();
+
+  // Predictions change → refresh pick stats and re-render cards for all users
+  sb.channel('picks-channel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, async () => {
+      await loadPickStats();
+      renderMatches();
+    })
+    .subscribe();
+
+  // Profiles change → refresh leaderboard/stats if visible
+  sb.channel('profiles-channel')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, async () => {
+      await loadPlayers();
+      const lbVisible = document.getElementById('page-leaderboard').classList.contains('on');
+      const statsVisible = document.getElementById('page-stats').classList.contains('on');
+      if (lbVisible) await renderLeaderboard();
+      if (statsVisible) await renderStats();
     })
     .subscribe();
 
@@ -71,9 +108,49 @@ function subscribeToUpdates() {
     .subscribe();
 }
 
+// ── Playoff schedule overrides (persisted in Supabase playoff_config) ──
+// Table schema:
+//   CREATE TABLE playoff_config (
+//     match_id  int  PRIMARY KEY,
+//     t1        text NOT NULL DEFAULT 'TBD',
+//     t2        text NOT NULL DEFAULT 'TBD',
+//     venue     text NOT NULL DEFAULT 'TBD'
+//   );
+//   ALTER TABLE playoff_config ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "anyone can read"  ON playoff_config FOR SELECT USING (true);
+//   CREATE POLICY "admin can write"  ON playoff_config FOR ALL USING (true) WITH CHECK (true);
+
+async function loadPlayoffOverrides() {
+  const { data, error } = await sb.from('playoff_config').select('match_id,t1,t2,venue');
+  if (error) { console.warn('loadPlayoffOverrides:', error.message); return; }
+  if (!data?.length) return;
+  data.forEach(ov => {
+    const m = MATCHES.find(x => x.id === ov.match_id);
+    if (!m) return;
+    m.t1    = ov.t1    || 'TBD';
+    m.t2    = ov.t2    || 'TBD';
+    m.venue = ov.venue || 'TBD';
+    // REAL_MATCHES now includes all matches — no push needed
+  });
+}
+
+async function savePlayoffOverride(mid, fields) {
+  const { error } = await sb.from('playoff_config').upsert(
+    { match_id: mid, ...fields },
+    { onConflict: 'match_id' }
+  );
+  if (error) { console.error('savePlayoffOverride:', error.message); throw error; }
+}
+
+async function clearPlayoffOverride(mid) {
+  const { error } = await sb.from('playoff_config').delete().eq('match_id', mid);
+  if (error) console.error('clearPlayoffOverride:', error.message);
+}
+
 // ── Load data from Supabase ──────────────────────────────────
 async function loadAllData() {
-  await Promise.all([loadResults(), loadMyPredictions(), loadPlayers(), loadBroadcast()]);
+  await Promise.all([loadResults(), loadMyPredictions(), loadPlayers(), loadBroadcast(), loadPlayoffOverrides()]);
+  await loadPickStats(); // needs allPlayers + MATCHES ready first
   REAL_MATCHES.forEach(m => { lastLockState[m.id] = isMatchLocked(m); });
 }
 
@@ -93,7 +170,8 @@ async function loadMyPredictions() {
 
 async function loadPlayers() {
   const { data, error } = await sb.from('profiles').select('*').order('total_pts', { ascending: false });
-  if (error) { console.error('loadPlayers:', error.message); return; }
+  if (error) { console.error('loadPlayers error:', error.message, error); return; }
+  console.log('[loadPlayers] got', data?.length, 'players');
   if (data && data.length) {
     allPlayers = data.map(p => ({
       uid: p.id,
@@ -114,6 +192,53 @@ async function loadBroadcast() {
   if (data?.message) showBroadcast(data.message);
 }
 
+// ── Load pick stats (aggregate + names for locked matches) ──
+async function loadPickStats() {
+  // Two separate queries — avoids needing a PostgREST FK relationship on predictions→profiles
+  const [{ data: preds, error: pe }, { data: profiles }] = await Promise.all([
+    sb.from('predictions').select('user_id, match_id, pick'),
+    sb.from('profiles').select('id, display_name, email'),
+  ]);
+  if (pe) { console.error('loadPickStats error:', pe.message); return; }
+  if (!preds) return;
+  console.log('[pickStats] loaded', preds.length, 'picks across', new Set(preds.map(p=>p.match_id)).size, 'matches');
+
+  // Build a quick user_id → profile lookup
+  const profileMap = {};
+  (profiles || []).forEach(p => { profileMap[p.id] = p; });
+
+  allPickStats = {};
+  allPickNames = {};
+
+  preds.forEach(row => {
+    const mid  = row.match_id;
+    const team = row.pick;
+    const m    = MATCHES.find(x => x.id === mid);
+    if (!m) return;
+
+    // Aggregate counts — always visible
+    if (!allPickStats[mid]) allPickStats[mid] = { t1: 0, t2: 0, total: 0 };
+    if (team === m.t1)      allPickStats[mid].t1++;
+    else if (team === m.t2) allPickStats[mid].t2++;
+    allPickStats[mid].total++;
+
+    // Named picks — only revealed once match is locked
+    if (isMatchLocked(m)) {
+      const prof   = profileMap[row.user_id] || {};
+      const name   = prof.display_name || prof.email?.split('@')[0] || 'Player';
+      // Use allPlayers cache (already loaded) for avatar letter + color
+      const player = allPlayers.find(p => p.uid === row.user_id);
+      if (!allPickNames[mid])       allPickNames[mid] = {};
+      if (!allPickNames[mid][team]) allPickNames[mid][team] = [];
+      allPickNames[mid][team].push({
+        name,
+        avatar: player?.avatar || name[0].toUpperCase(),
+        color:  player?.color  || '#f5c842',
+      });
+    }
+  });
+}
+
 // ── Save prediction to Supabase ──────────────────────────────
 async function savePrediction(matchId, team) {
   // Ensure session is fresh before writing — prevents silent failures after long idle
@@ -132,6 +257,7 @@ async function savePrediction(matchId, team) {
     console.error('savePrediction:', error);
     return;
   }
+  await loadPickStats();
   await refreshMyStats();
 }
 
@@ -174,7 +300,7 @@ async function recalcAllPlayerPoints() {
     const res = resMap[p.match_id];
     if (res) {
       const m = MATCHES.find(x => x.id === p.match_id);
-      const pts = res === 'NR' ? 0 : p.pick === res ? (m?.pl ? 20 : 10) : 0;
+      const pts = res === 'NR' ? 0 : p.pick === res ? 10 : 0;
       playerMap[p.user_id].pts  += pts;
       if (pts > 0) playerMap[p.user_id].corr++;
     }
@@ -192,7 +318,7 @@ function calcPts(mid) {
   if (!pred || !res) return null;
   if (res === 'NR') return 0;
   const m = MATCHES.find(x => x.id === mid);
-  return pred === res ? (m?.pl ? 20 : 10) : 0;
+  return pred === res ? 10 : 0;
 }
 function calcMyTotalPts() { return REAL_MATCHES.reduce((s,m) => s + (calcPts(m.id) ?? 0), 0); }
 function calcMyCorrect()  { return REAL_MATCHES.filter(m => (calcPts(m.id) ?? 0) > 0).length; }
@@ -307,6 +433,9 @@ function renderMatches() {
 function rng(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
 
 function matchCard(m) {
+  // TBD playoff — show a placeholder card, not pickable
+  if (m.t1 === 'TBD' || m.t2 === 'TBD') return tbdCard(m);
+
   const t1=TEAMS[m.t1], t2=TEAMS[m.t2];
   const pred=myPredictions[m.id], res=allResults[m.id], p=calcPts(m.id);
   const locked = res ? true : isMatchLocked(m);
@@ -350,7 +479,7 @@ function matchCard(m) {
   return `
   <div class="${cardCls}">
     <div class="mcard-top">
-      <div class="mnum">MATCH ${m.id}${m.pl?' · ×2':''}</div>
+      <div class="mnum">MATCH ${m.id}${m.pl?' · '+m.label:''}</div>
       <div class="badge ${bc}">${badge}</div>
     </div>
     <div class="teams">
@@ -369,6 +498,75 @@ function matchCard(m) {
     </div>
     ${rl}
     ${locked&&!res&&pred?`<div class="res-label lbl-n" style="color:var(--gold)">🔒 Your pick: ${pred} · Awaiting result</div>`:''}
+    ${pickStatsHtml(m, locked)}
+  </div>`;
+}
+
+function pickStatsHtml(m, locked) {
+  // Only show pick stats after match is locked — no % revealed before lock
+  if (!locked) return '';
+
+  const stats = allPickStats[m.id];
+  if (!stats || stats.total === 0) return '';
+
+  const pct1 = Math.round(stats.t1 / stats.total * 100);
+  const pct2 = 100 - pct1;
+  const t1 = TEAMS[m.t1], t2 = TEAMS[m.t2];
+
+  // After lock: show % bar + reveal who picked what
+  const names = allPickNames[m.id] || {};
+  const t1Pickers = names[m.t1] || [];
+  const t2Pickers = names[m.t2] || [];
+
+  function avatarList(pickers) {
+    if (!pickers.length) return `<span style="color:var(--muted);font-size:11px">None</span>`;
+    return pickers.map(p =>
+      `<div class="ps-avatar" style="background:${p.color}22;color:${p.color}" title="${p.name}">${p.avatar}</div>`
+    ).join('');
+  }
+
+  return `
+  <div class="pick-stats">
+    <div class="ps-label">
+      <span>${t1?.e||''} ${m.t1} <b>${pct1}%</b></span>
+      <span style="color:var(--muted);font-size:11px">${stats.total} pick${stats.total!==1?'s':''}</span>
+      <span><b>${pct2}%</b> ${t2?.e||''} ${m.t2}</span>
+    </div>
+    <div class="ps-bar">
+      <div class="ps-fill ps-t1" style="width:${pct1}%"></div>
+      <div class="ps-fill ps-t2" style="width:${pct2}%"></div>
+    </div>
+    <div class="ps-names">
+      <div class="ps-side">
+        <div class="ps-avatars">${avatarList(t1Pickers)}</div>
+      </div>
+      <div class="ps-side" style="align-items:flex-end">
+        <div class="ps-avatars" style="justify-content:flex-end">${avatarList(t2Pickers)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── TBD placeholder card ─────────────────────────────────────
+function tbdCard(m) {
+  return `
+  <div class="mcard" style="opacity:0.6;border-style:dashed">
+    <div class="mcard-top">
+      <div class="mnum">${m.label || 'MATCH '+m.id}</div>
+      <div class="badge b-open">🗓 TBD</div>
+    </div>
+    <div class="teams">
+      <div class="team"><div class="t-emoji">🏏</div><div class="t-code">TBD</div><div class="t-name">To be decided</div></div>
+      <div class="vs">VS</div>
+      <div class="team"><div class="t-emoji">🏏</div><div class="t-code">TBD</div><div class="t-name">To be decided</div></div>
+    </div>
+    <div class="minfo">
+      <div class="venue">📍 ${m.venue}</div>
+      <div class="mdate">📅 ${m.date}</div>
+    </div>
+    <div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0">
+      ⏳ Teams announced after league stage
+    </div>
   </div>`;
 }
 
@@ -393,21 +591,49 @@ function updateHero() {
 
 // ── Leaderboard ───────────────────────────────────────────────
 async function renderLeaderboard() {
-  await loadPlayers();
-  const sorted = [...allPlayers].sort((a,b)=>b.pts-a.pts);
-  const myIdx  = sorted.findIndex(p=>p.uid===currentUser?.id);
-  const me     = sorted[myIdx]||{};
-  document.getElementById('lb-rank').textContent   = myIdx+1||'—';
-  document.getElementById('lb-myname').textContent = me.name||'You';
-  document.getElementById('lb-pts').textContent    = (me.pts||0)+' PTS';
+  const tbody = document.getElementById('lb-body');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">Loading…</td></tr>';
+
+  try {
+    await loadPlayers();
+  } catch(e) {
+    console.error('renderLeaderboard loadPlayers failed:', e);
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">Failed to load — try refreshing.</td></tr>';
+    return;
+  }
+
+  if (!allPlayers.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">No players yet.</td></tr>';
+    return;
+  }
+
+  // Sort: points desc
+  const sorted = [...allPlayers].sort((a,b) => b.pts - a.pts);
+
+  // Dense ranking: same pts = same rank, no gaps (1,1,2 not 1,1,3)
+  const ranks = [];
+  let rank = 1;
+  sorted.forEach((p, i) => {
+    if (i > 0 && p.pts !== sorted[i-1].pts) rank++;
+    ranks.push(rank);
+  });
+
+  const myIdx = sorted.findIndex(p => p.uid === currentUser?.id);
+  const me    = sorted[myIdx] || {};
+  const myRank = myIdx >= 0 ? ranks[myIdx] : '—';
+
+  document.getElementById('lb-rank').textContent   = myRank;
+  document.getElementById('lb-myname').textContent = me.name || 'You';
+  document.getElementById('lb-pts').textContent    = (me.pts || 0) + ' PTS';
   document.getElementById('lb-sub').textContent    = `${me.corr||0} correct · ${me.pred||0} predicted`;
-  document.getElementById('lb-body').innerHTML = sorted.map((p,i)=>{
-    const isMe=p.uid===currentUser?.id;
-    const rkCls=i===0?'r1':i===1?'r2':i===2?'r3':'';
-    const acc=p.pred>0?Math.round(p.corr/p.pred*100)+'%':'—';
+
+  tbody.innerHTML = sorted.map((p, i) => {
+    const isMe  = p.uid === currentUser?.id;
+    const r     = ranks[i];
+    const rkCls = r===1?'r1':r===2?'r2':r===3?'r3':'';
     return `
     <tr ${isMe?'class="you-row"':''}>
-      <td><div class="rk ${rkCls}">${i+1}</div></td>
+      <td><div class="rk ${rkCls}">${r}</div></td>
       <td><div class="pnm">
         <div class="av" style="background:${p.color+'22'};color:${p.color}">${p.avatar}</div>
         <div><b>${p.name}${isMe?' (You)':''}</b>${p.isAdmin?'<span class="admin-crown">ADMIN</span>':''}</div>
@@ -420,7 +646,8 @@ async function renderLeaderboard() {
 }
 
 // ── My Stats ──────────────────────────────────────────────────
-function renderStats() {
+async function renderStats() {
+  await loadPlayers(); // fresh fetch so rank is always current
   const pts=calcMyTotalPts(), pred=Object.keys(myPredictions).length, corr=calcMyCorrect(), acc=calcMyAcc();
   document.getElementById('ms-pts').textContent  = pts;
   document.getElementById('ms-pred').textContent = pred;
@@ -430,7 +657,14 @@ function renderStats() {
   REAL_MATCHES.forEach(m=>{const x=calcPts(m.id);if(x===null){cur=0;return;}x>0?(cur++,best=Math.max(best,cur)):(cur=0);});
   document.getElementById('ms-str').textContent = best;
   const sorted=[...allPlayers].sort((a,b)=>b.pts-a.pts);
-  document.getElementById('ms-rank').textContent=(sorted.findIndex(p=>p.uid===currentUser?.id)+1)||'—';
+  // Dense rank — same pts = same rank, no gaps (1,1,2 not 1,1,3)
+  let sRank=1;
+  const myStatsIdx=sorted.findIndex(p=>p.uid===currentUser?.id);
+  sorted.forEach((p,i)=>{
+    if(i>0&&p.pts!==sorted[i-1].pts) sRank++;
+    if(i===myStatsIdx) document.getElementById('ms-rank').textContent=sRank;
+  });
+  if(myStatsIdx<0) document.getElementById('ms-rank').textContent='—';
   const settled=REAL_MATCHES.filter(m=>myPredictions[m.id]&&allResults[m.id]).slice(-20);
   document.getElementById('streak-row').innerHTML=
     settled.map(m=>calcPts(m.id)>0?`<div class="sd sw">W</div>`:`<div class="sd sl">L</div>`).join('')+
@@ -453,9 +687,12 @@ function renderStats() {
 }
 
 // ── Admin ─────────────────────────────────────────────────────
-function renderAdmin() { renderAdminResults(); renderAdminUsers(); renderAdminMatchStatus(); }
+async function renderAdmin() { await Promise.all([loadResults(), loadPlayers()]); renderAdminResults(); renderAdminUsers(); renderAdminMatchStatus(); renderAdminPlayoffs(); }
 
 function renderAdminResults() {
+  // Exclude TBD playoffs from results tab — those are managed in Playoffs tab
+  const ALL_REAL = REAL_MATCHES.filter(m => m.t1 !== 'TBD' && m.t2 !== 'TBD');
+
   function cardHtml(m) {
     const t1=TEAMS[m.t1],t2=TEAMS[m.t2],res=allResults[m.id];
     return `<div class="ac">
@@ -472,8 +709,8 @@ function renderAdminResults() {
   }
 
   if (adminFilt === 'all') {
-    const pending   = REAL_MATCHES.filter(m => !allResults[m.id]);
-    const completed = REAL_MATCHES.filter(m =>  allResults[m.id]);
+    const pending   = ALL_REAL.filter(m => !allResults[m.id]);
+    const completed = ALL_REAL.filter(m =>  allResults[m.id]);
     let html = pending.map(cardHtml).join('');
     if (completed.length) {
       html += `<div class="phase-hdr" style="margin:20px 0 10px">🏁 COMPLETED (${completed.length})</div>`;
@@ -483,7 +720,7 @@ function renderAdminResults() {
     return;
   }
 
-  let ms = REAL_MATCHES;
+  let ms = ALL_REAL;
   if      (adminFilt==='live')    ms = ms.filter(m=>!allResults[m.id]&&secsUntilLock(m)<7200);
   else if (adminFilt==='pending') ms = ms.filter(m=>!allResults[m.id]);
   else if (adminFilt==='done')    ms = ms.filter(m=>!!allResults[m.id]);
@@ -519,9 +756,10 @@ function setAdminFilter(f,btn){
 }
 
 function renderAdminMatchStatus() {
-  // Pending/live matches first, completed (result entered) at the bottom
-  const pending   = REAL_MATCHES.filter(m => !allResults[m.id]);
-  const completed = REAL_MATCHES.filter(m =>  allResults[m.id]);
+  // Exclude TBD playoffs — managed separately in Playoffs tab
+  const nonTBD    = REAL_MATCHES.filter(m => m.t1 !== 'TBD' && m.t2 !== 'TBD');
+  const pending   = nonTBD.filter(m => !allResults[m.id]);
+  const completed = nonTBD.filter(m =>  allResults[m.id]);
 
   function cardHtml(m) {
     const locked = isMatchLocked(m), res = allResults[m.id];
@@ -758,7 +996,7 @@ async function adminPickSubmit() {
       const res = allResults[p.match_id];
       if (!res) return;
       const match = MATCHES.find(x => x.id === p.match_id);
-      const earned = res === 'NR' ? 0 : p.pick === res ? (match?.pl ? 20 : 10) : 0;
+      const earned = res === 'NR' ? 0 : p.pick === res ? 10 : 0;
       pts += earned; if (earned > 0) corr++;
     });
     await sb.from('profiles').update({ total_pts: pts, correct: corr, predicted: preds.length }).eq('id', uid);
@@ -1005,15 +1243,15 @@ function setAuthLoading(form,on){
 }
 
 // ── Nav ───────────────────────────────────────────────────────
-function go(id,btn){
+async function go(id,btn){
   if(!isAdmin&&id==='admin') return;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('on'));
   document.getElementById('page-'+id).classList.add('on');
   if(btn) btn.classList.add('on');
-  if(id==='leaderboard') renderLeaderboard();
-  if(id==='stats')       renderStats();
-  if(id==='admin')       renderAdmin();
+  if(id==='leaderboard') await renderLeaderboard();
+  if(id==='stats')       await renderStats();
+  if(id==='admin')       await renderAdmin();
   document.getElementById('user-dropdown')?.classList.add('hidden');
 }
 function setFilter(f,btn){
@@ -1024,16 +1262,114 @@ function setFilter(f,btn){
 function switchAdminTab(tab,btn){
   document.querySelectorAll('.admin-section').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.admin-stab').forEach(b=>b.classList.remove('on'));
-  document.getElementById('admin-'+tab).classList.add('on');
+  // playoffs tab has a different element id to avoid collision
+  const elId = tab === 'playoffs' ? 'admin-playoffs-section' : 'admin-' + tab;
+  document.getElementById(elId).classList.add('on');
   btn.classList.add('on');
-  if(tab==='manage')  renderAdminUsers();
-  if(tab==='matches') renderAdminMatchStatus();
+  if(tab==='manage')   renderAdminUsers();
+  if(tab==='matches')  renderAdminMatchStatus();
+  if(tab==='playoffs') renderAdminPlayoffs();
 }
 function toggleUserMenu(){document.getElementById('user-dropdown').classList.toggle('hidden');}
 document.addEventListener('click',e=>{if(!e.target.closest('.hdr-right'))document.getElementById('user-dropdown')?.classList.add('hidden');});
 function showScreen(which){
   document.getElementById('auth-screen').classList.toggle('hidden',which!=='auth');
   document.getElementById('app-screen').classList.toggle('hidden',which!=='app');
+}
+
+// ── Admin: Playoff schedule editor ──────────────────────────
+function renderAdminPlayoffs() {
+  const el = document.getElementById('admin-playoffs');
+  if (!el) return;
+  const playoffMatches = MATCHES.filter(m => m.pl);
+
+  el.innerHTML = playoffMatches.map(m => {
+    const teamOpts = Object.keys(TEAMS).map(k =>
+      `<option value="${k}" ${m.t1===k?'selected':''}>${TEAMS[k].e} ${k}</option>`
+    ).join('');
+    const teamOpts2 = Object.keys(TEAMS).map(k =>
+      `<option value="${k}" ${m.t2===k?'selected':''}>${TEAMS[k].e} ${k}</option>`
+    ).join('');
+    const isTBD = m.t1 === 'TBD' || m.t2 === 'TBD';
+
+    return `<div class="ac" style="border-color:${isTBD?'rgba(245,200,66,0.2)':'rgba(39,174,96,0.3)'}">
+      <div class="ac-title" style="color:var(--gold)">${m.label || 'Match '+m.id} · ${m.date}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+        Currently: <b style="color:${isTBD?'var(--gold)':'var(--green)'}">${m.t1} vs ${m.t2}</b> · ${m.venue}
+      </div>
+      <div style="display:grid;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>
+            <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:4px">Team 1</label>
+            <select id="po-t1-${m.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#151826;color:#e8eaf0;font-size:13px">
+              <option value="TBD">— TBD —</option>
+              ${teamOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:4px">Team 2</label>
+            <select id="po-t2-${m.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#151826;color:#e8eaf0;font-size:13px">
+              <option value="TBD">— TBD —</option>
+              ${teamOpts2}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:4px">Venue</label>
+          <input id="po-venue-${m.id}" type="text" value="${m.venue==='TBD'?'':m.venue}" placeholder="e.g. Ahmedabad"
+            style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#151826;color:#e8eaf0;font-size:13px;box-sizing:border-box">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="arbtn" style="flex:1;background:rgba(245,200,66,0.15);border-color:rgba(245,200,66,0.4);color:var(--gold);font-weight:700"
+            onclick="adminSavePlayoff(${m.id})">💾 Save Matchup</button>
+          <button class="arbtn" style="color:var(--muted)"
+            onclick="adminResetPlayoff(${m.id})">↺ Reset</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function adminSavePlayoff(mid) {
+  const m = MATCHES.find(x => x.id === mid);
+  if (!m) return;
+  const t1    = document.getElementById(`po-t1-${mid}`).value;
+  const t2    = document.getElementById(`po-t2-${mid}`).value;
+  const venue = document.getElementById(`po-venue-${mid}`).value.trim() || 'TBD';
+
+  if (t1 === t2 && t1 !== 'TBD') { toast('Teams must be different', 'err'); return; }
+
+  // Disable save button while writing
+  const saveBtn = document.querySelector(`#admin-playoffs [onclick="adminSavePlayoff(${mid})"]`);
+  if (saveBtn) { saveBtn.textContent = '⏳ Saving…'; saveBtn.disabled = true; }
+
+  try {
+    await savePlayoffOverride(mid, { t1, t2, venue });
+  } catch(e) {
+    toast('Failed to save — check Supabase playoff_config table', 'err');
+    if (saveBtn) { saveBtn.textContent = '💾 Save Matchup'; saveBtn.disabled = false; }
+    return;
+  }
+
+  m.t1 = t1; m.t2 = t2; m.venue = venue;
+
+  // REAL_MATCHES includes all matches — card re-renders via renderMatches()
+
+  renderAdminPlayoffs();
+  renderMatches();
+  toast(`✅ ${m.label} updated: ${t1} vs ${t2}`);
+}
+
+async function adminResetPlayoff(mid) {
+  if (!confirm('Reset this playoff matchup to TBD?')) return;
+  const m = MATCHES.find(x => x.id === mid);
+  if (!m) return;
+  await clearPlayoffOverride(mid);
+  m.t1 = 'TBD'; m.t2 = 'TBD'; m.venue = 'TBD';
+  // REAL_MATCHES always includes playoff entries — tbdCard handles display
+  renderAdminPlayoffs();
+  renderMatches();
+  toast('Playoff matchup reset to TBD', 'warn');
 }
 
 // ── Toast ─────────────────────────────────────────────────────

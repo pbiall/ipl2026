@@ -187,7 +187,7 @@
       <div class="hero">
         <div class="hero-badge">🔥 TATA IPL 2026 · Season Active · RCB Defending Champions</div>
         <h1>PICK YOUR <span>WINNERS.</span></h1>
-        <p>One prediction per match — pick who wins. 10 pts correct, ×2 in playoffs. Lock it in before toss.</p>
+        <p>One prediction per match — pick who wins. 10 pts for every correct call. Lock it in before toss.</p>
         <div class="hero-stats">
           <div><div class="hs-v">71</div><div class="hs-l">Matches</div></div>
           <div><div class="hs-v" id="hs-pred">0</div><div class="hs-l">Predicted</div></div>
@@ -250,7 +250,7 @@
         <div class="rc"><div class="rc-pt">+10</div><div class="rc-d">Correct winner prediction</div></div>
         <div class="rc"><div class="rc-pt" style="color:var(--red)">0</div><div class="rc-d">Wrong prediction — no penalty</div></div>
         <div class="rc"><div class="rc-pt" style="color:var(--muted)">0</div><div class="rc-d">Abandoned / No Result match</div></div>
-        <div class="rc"><div class="rc-pt" style="color:var(--green)">×2</div><div class="rc-d">Qualifier 1, 2, Eliminator & Final</div></div>
+        <div class="rc"><div class="rc-pt" style="color:var(--gold)">74</div><div class="rc-d">Total matches incl. playoffs</div></div>
       </div>
       <div class="sec" style="margin-bottom:12px"><div class="sec-t" style="font-size:18px">How It Works</div></div>
       <div class="rnote">
@@ -258,7 +258,7 @@
           <li>Pick one team as your winner before each match — that's all.</li>
           <li>Prediction window locks 10 minutes before toss.</li>
           <li>Points awarded automatically once admin enters the result.</li>
-          <li>Playoff matches (Q1, Q2, Eliminator, Final) score 2× points.</li>
+          <li>Playoff matches (Q1, Q2, Eliminator, Final) score the same 10 pts — no bonus multiplier.</li>
           <li>No negative points — wrong predictions score 0.</li>
           <li>Leaderboard updates in real-time for all players.</li>
         </ul>
@@ -275,6 +275,7 @@
         <button class="admin-stab" onclick="switchAdminTab('manage',this)">👥 Manage Users</button>
         <button class="admin-stab" onclick="switchAdminTab('matches',this)">⚙ Match Status</button>
         <button class="admin-stab" onclick="switchAdminTab('broadcast',this)">📢 Broadcast</button>
+        <button class="admin-stab" onclick="switchAdminTab('playoffs',this)">🏆 Playoffs</button>
       </div>
 
       <!-- RESULTS TAB -->
@@ -299,6 +300,12 @@
       <div id="admin-matches" class="admin-section">
         <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Change match status — set any match to Live, Upcoming, or Locked (no more predictions).</p>
         <div class="admin-grid" id="admin-match-status"></div>
+      </div>
+
+      <!-- PLAYOFFS TAB -->
+      <div id="admin-playoffs-section" class="admin-section">
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Set the teams for each playoff match when qualifiers are decided. Changes apply instantly for all users.</p>
+        <div class="admin-grid" id="admin-playoffs"></div>
       </div>
 
       <!-- BROADCAST TAB -->
