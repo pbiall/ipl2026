@@ -610,12 +610,17 @@ async function renderLeaderboard() {
   // Sort: points desc
   const sorted = [...allPlayers].sort((a,b) => b.pts - a.pts);
 
-  // Dense ranking: same pts = same rank, no gaps (1,1,2 not 1,1,3)
+  // UPDATED: Standard Competition Ranking (1, 2, 2, 4)
   const ranks = [];
-  let rank = 1;
+  let currentRank = 1;
+  
   sorted.forEach((p, i) => {
-    if (i > 0 && p.pts !== sorted[i-1].pts) rank++;
-    ranks.push(rank);
+    // If points are different from the previous player, 
+    // the rank jumps to the current position (index + 1)
+    if (i > 0 && p.pts !== sorted[i-1].pts) {
+      currentRank = i + 1;
+    }
+    ranks.push(currentRank);
   });
 
   const myIdx = sorted.findIndex(p => p.uid === currentUser?.id);
