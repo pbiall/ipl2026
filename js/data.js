@@ -1,4 +1,4 @@
-let activeLeague = 'IPL';
+let activeLeague = 'NFL';
 let TEAMS = {};
 let MATCHES = [];
 let REAL_MATCHES = [];
@@ -283,10 +283,10 @@ const LEAGUES = {
     key: 'IPL',
     displayName: 'IPL 2026',
     icon: '🏏',
-    heroBadge: '🏏 TATA IPL 2026 · Season Active · RCB Defending Champions',
-    seasonLabel: 'Season 2026',
+    heroBadge: '🗄 TATA IPL 2026 · Season Ended · Read-Only Archive',
+    seasonLabel: 'IPL 2026 Archive',
     totalMatches: 74,
-    archived: false,
+    archived: true,   // Season ended — all matches locked, read-only
     hasTie: false,
     phases: [
       { label: 'PHASE 1 · Mar 28 – Apr 20',  ids: rng(1,30)  },
@@ -333,27 +333,11 @@ const LEAGUES = {
     teams: NFL_TEAMS,
     matches: NFL_2026_MATCHES,
   },
-  // ── ARCHIVE ───────────────────────────────────────────────
-  // IPL 2026 is now archived (season ended). Users can view
-  // their picks and the leaderboard but cannot make new picks.
-  IPL_2026_ARCHIVE: {
-    key: 'IPL_2026_ARCHIVE',
-    displayName: 'IPL 2026 (Archive)',
-    icon: '🗄',
-    heroBadge: '🗄 IPL 2026 · Season Ended · Read-Only Archive',
-    seasonLabel: 'IPL 2026 Archive',
-    totalMatches: 74,
-    archived: true,   // Locks all picks — read-only
-    hasTie: false,
-    phases: [
-      { label: 'PHASE 1 · Mar 28 – Apr 20',  ids: rng(1,30)  },
-      { label: 'PHASE 2 · Apr 21 – May 10',  ids: rng(31,54) },
-      { label: 'PHASE 3 · May 11 – May 24',  ids: rng(55,70) },
-      { label: 'PLAYOFFS',                    ids: rng(71,74) },
-    ],
-    teams: IPL_TEAMS,
-    matches: IPL_2026_MATCHES,  // Same matches, all locked because archived:true
-  },
+  // IPL 2026 is now the archive — see the IPL entry above (archived: true)
+  // To add IPL 2027 next year:
+  //   1. Change IPL.archived to false and update IPL.matches
+  //   2. Rename the old IPL entry to IPL_2026 with archived:true
+  // No other code changes needed.
 };
 
 // ── League API ────────────────────────────────────────────────
