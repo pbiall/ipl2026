@@ -159,12 +159,11 @@
     <div class="hdr-in">
       <div class="logo">
         <div class="logo-icon">🏏</div>
-        <div><div class="logo-t">PREDICT XI</div><div class="logo-s" id="logo-s">Loading League</div></div>
+        <div><div class="logo-t">PREDICT XI</div><div class="logo-s" id="logo-s">NFL 2026</div></div>
       </div>
       <div id="league-switch-btns" style="display:flex;gap:4px;margin-left:12px;flex-shrink:0">
-        <button id="league-btn-IPL" onclick="switchLeague('IPL')" style="padding:5px 11px;border-radius:6px;border:1.5px solid rgba(245,200,66,0.6);background:#f5c842;color:#000;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🏏 IPL</button>
-        <button id="league-btn-NFL" onclick="switchLeague('NFL')" style="padding:5px 11px;border-radius:6px;border:1.5px solid rgba(245,200,66,0.3);background:transparent;color:#f5c842;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🏈 NFL</button>
-        <button id="league-btn-IPL_2026_ARCHIVE" onclick="switchLeague('IPL_2026_ARCHIVE')" style="padding:5px 11px;border-radius:6px;border:1.5px solid rgba(245,200,66,0.3);background:transparent;color:#f5c842;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;opacity:0.7">🗄 IPL 2026</button>
+        <button id="league-btn-NFL" onclick="switchLeague('NFL')" style="padding:5px 11px;border-radius:6px;border:1.5px solid rgba(245,200,66,0.6);background:#f5c842;color:#000;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🏈 NFL 2026</button>
+        <button id="league-btn-IPL" onclick="switchLeague('IPL')" style="padding:5px 11px;border-radius:6px;border:1.5px solid rgba(245,200,66,0.3);background:transparent;color:#f5c842;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;opacity:0.7" title="Season ended — read only">🗄 IPL 2026</button>
       </div>
       <div class="nav" id="main-nav">
         <button class="ntab on" onclick="go('predict',this)">Predict</button>
@@ -196,7 +195,7 @@
     <div id="archive-banner" style="display:none;align-items:center;gap:10px;background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.25);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#e8eaf0">
       <span style="font-size:18px">🗄</span>
       <span id="archive-banner-text">This season is archived.</span>
-      <button onclick="switchLeague('IPL')" style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(245,200,66,0.4);background:transparent;color:#f5c842;font-size:12px;font-weight:700;cursor:pointer">Go to IPL 2026 →</button>
+      <button onclick="switchLeague('NFL')" style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(245,200,66,0.4);background:transparent;color:#f5c842;font-size:12px;font-weight:700;cursor:pointer">Go to IPL 2026 →</button>
     </div>
 
     <!-- PREDICT -->
@@ -204,7 +203,7 @@
       <div class="hero">
         <div class="hero-badge" id="hero-badge">Loading league info…</div>
         <h1>PICK YOUR <span>WINNERS.</span></h1>
-        <p>One prediction per match — pick who wins. 10 pts for every correct call. Lock it in before toss.</p>
+        <p>One prediction per game — pick the winner. +10 pts for every correct call. Locks at kickoff / toss time.</p>
         <div class="hero-stats">
           <div><div class="hs-v" id="hs-total">0</div><div class="hs-l">Matches</div></div>
           <div><div class="hs-v" id="hs-pred">0</div><div class="hs-l">Predicted</div></div>
