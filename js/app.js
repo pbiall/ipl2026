@@ -27,9 +27,9 @@ let lastLockState = {};
 
 // ── League helpers ────────────────────────────────────────────
 function applyLeagueFilter(query) {
-  if (activeLeague === 'IPL') return query.or('league.eq.IPL,league.is.null');
-  if (activeLeague === 'NFL') return query.eq('league', 'NFL');
-  return query.or(`league.eq.${activeLeague},league.is.null`);
+  // League filtering is done client-side via match IDs
+  // (league column may not exist in DB yet)
+  return query;
 }
 
 async function queryWithLeague(table, select) {
@@ -52,22 +52,25 @@ function populateLeagueSelect() {
 
 function setLeagueUI() {
   const cfg = getLeagueConfig();
-  // Update ALL league buttons
+  // Update league pill buttons
+  // Update all league buttons dynamically
   Object.keys(LEAGUES).forEach(k => {
     const btn = document.getElementById('league-btn-' + k);
     if (!btn) return;
-    const isActive = k === activeLeague;
-    btn.style.background  = isActive ? '#f5c842' : 'transparent';
-    btn.style.color       = isActive ? '#000' : '#f5c842';
-    btn.style.borderColor = isActive ? 'rgba(245,200,66,0.8)' : 'rgba(245,200,66,0.3)';
+    if (k === activeLeague) {
+      btn.style.background = '#f5c842'; btn.style.color = '#000'; btn.style.borderColor = 'rgba(245,200,66,0.8)';
+    } else {
+      btn.style.background = 'transparent'; btn.style.color = '#f5c842'; btn.style.borderColor = 'rgba(245,200,66,0.3)';
+    }
   });
-  // Show archive notice if viewing archived league
+  // Show archive banner when viewing archived league
   const archiveBanner = document.getElementById('archive-banner');
   if (archiveBanner) {
+    const cfg = getLeagueConfig();
     if (cfg.archived) {
       archiveBanner.style.display = 'flex';
-      const abt = archiveBanner.querySelector('#archive-banner-text');
-      if (abt) abt.textContent = cfg.displayName + ' — Season ended. View your picks and leaderboard. Picking is disabled.';
+      const abt = document.getElementById('archive-banner-text');
+      if (abt) abt.textContent = cfg.displayName + ' — Season ended. View your picks and final leaderboard.';
     } else {
       archiveBanner.style.display = 'none';
     }
@@ -92,15 +95,9 @@ function setLeagueUI() {
 }
 
 async function switchLeague(leagueKey) {
-  if (!LEAGUES[leagueKey]) return;
-  if (leagueKey === activeLeague) return;
+  if (!LEAGUES[leagueKey] || leagueKey === activeLeague) return;
   setLeague(leagueKey);
   localStorage.setItem('activeLeague', leagueKey);
-  // Reset filter to 'all' on league switch
-  activeFilt = 'all';
-  document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('on'));
-  const allBtn = document.getElementById('filter-all');
-  if (allBtn) allBtn.classList.add('on');
   setLeagueUI();
   myPredictions = {};
   allResults    = {};
@@ -161,7 +158,7 @@ function subscribeToUpdates() {
   // Remove any existing channels to avoid duplicates on re-login
   sb.getChannels().forEach(ch => sb.removeChannel(ch));
 
-  // Results change →Æ refresh cards + hero for everyone
+  // Results change → refresh cards + hero for everyone
   sb.channel('results-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'results' }, async () => {
       await loadResults();
@@ -174,7 +171,7 @@ function subscribeToUpdates() {
     })
     .subscribe();
 
-  // Playoff config change →Æ reload overrides and re-render matches for all users
+  // Playoff config change → reload overrides and re-render matches for all users
   sb.channel('playoff-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'playoff_config' }, async () => {
       await loadPlayoffOverrides();
@@ -183,7 +180,7 @@ function subscribeToUpdates() {
     })
     .subscribe();
 
-  // Predictions change →Æ refresh pick stats and re-render cards for all users
+  // Predictions change → refresh pick stats and re-render cards for all users
   sb.channel('picks-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, async () => {
       await loadPickStats();
@@ -191,7 +188,7 @@ function subscribeToUpdates() {
     })
     .subscribe();
 
-  // Profiles change →Æ refresh leaderboard/stats if visible
+  // Profiles change → refresh leaderboard/stats if visible
   sb.channel('profiles-channel')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, async () => {
       await loadPlayers();
@@ -202,7 +199,7 @@ function subscribeToUpdates() {
     })
     .subscribe();
 
-  // Broadcast change →Æ show banner
+  // Broadcast change → show banner
   sb.channel('broadcast-channel')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'broadcast' }, payload => {
       const msg = payload.new.message;
@@ -277,17 +274,18 @@ async function loadMyPredictions() {
 async function loadPlayers() {
   const { data, error } = await sb.from('profiles').select('*').order('total_pts', { ascending: false });
   if (error) { console.error('loadPlayers error:', error.message, error); return; }
+  console.log('[loadPlayers] got', data?.length, 'players');
   if (data && data.length) {
     allPlayers = data.map(p => ({
-      uid:     p.id,
-      name:    p.display_name || p.email?.split('@')[0] || 'Player',
-      email:   p.email || '',
-      pts:     p.total_pts || 0,
-      corr:    p.correct   || 0,
-      pred:    p.predicted || 0,
-      isAdmin: p.is_admin  || false,
-      avatar:  (p.display_name || p.email || 'P')[0].toUpperCase(),
-      color:   strToColor(p.display_name || p.email || '')
+      uid: p.id,
+      name: p.display_name || p.email?.split('@')[0] || 'Player',
+      email: p.email || '',
+      pts: p.total_pts || 0,
+      corr: p.correct || 0,
+      pred: p.predicted || 0,
+      isAdmin: p.is_admin || false,
+      avatar: (p.display_name || p.email || 'P')[0].toUpperCase(),
+      color: strToColor(p.display_name || p.email || '')
     }));
   }
 }
@@ -299,7 +297,7 @@ async function loadBroadcast() {
 
 // -- Load pick stats (aggregate + names for locked matches) --
 async function loadPickStats() {
-  // Two separate queries — avoids needing a PostgREST FK relationship on predictions→Æprofiles
+  // Two separate queries — avoids needing a PostgREST FK relationship on predictions→profiles
   let predsRes = await queryWithLeague('predictions', 'user_id, match_id, pick');
   const { data: profiles } = await sb.from('profiles').select('id, display_name, email');
   const preds = predsRes.data;
@@ -307,7 +305,7 @@ async function loadPickStats() {
   if (!preds) return;
   console.log('[pickStats] loaded', preds.length, 'picks across', new Set(preds.map(p=>p.match_id)).size, 'matches');
 
-  // Build a quick user_id →Æ profile lookup
+  // Build a quick user_id → profile lookup
   const profileMap = {};
   (profiles || []).forEach(p => { profileMap[p.id] = p; });
 
@@ -353,8 +351,8 @@ async function savePrediction(matchId, team) {
     return;
   }
   const { error } = await sb.from('predictions').upsert(
-    { user_id: currentUser.id, match_id: matchId, pick: team, league: activeLeague, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,match_id,league' }
+    { user_id: currentUser.id, match_id: matchId, pick: team, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,match_id' }
   );
   if (error) {
     toast('Pick not saved — ' + error.message, 'err');
@@ -376,53 +374,42 @@ async function refreshMyStats() {
 // -- Save result to Supabase (admin only) ---------------------
 async function saveResult(matchId, winner) {
   await sb.from('results').upsert(
-    { match_id: matchId, winner, league: activeLeague, set_by: currentUser.id, set_at: new Date().toISOString() },
-    { onConflict: 'match_id,league' }
+    { match_id: matchId, winner, set_by: currentUser.id, set_at: new Date().toISOString() },
+    { onConflict: 'match_id' }
   );
   // Recalculate points for all players (simplified: trigger full refresh)
   await recalcAllPlayerPoints();
 }
 
 async function clearResultDB(matchId) {
-  await sb.from('results').delete().eq('match_id', matchId).eq('league', activeLeague);
+  await sb.from('results').delete().eq('match_id', matchId);
   await recalcAllPlayerPoints();
 }
 
 async function recalcAllPlayerPoints() {
-  // Only recalc for the active league — never touches other sport's data
-  const league = activeLeague;
-  const validIds = new Set(REAL_MATCHES.map(m => m.id));
-
-  const [{ data: allPreds }, { data: allRes }] = await Promise.all([
-    sb.from('predictions').select('user_id,match_id,pick').eq('league', league),
-    sb.from('results').select('match_id,winner').eq('league', league),
-  ]);
+  // For each player, reload their predictions and recalc against current results
+  const { data: allPreds } = await sb.from('predictions').select('user_id,match_id,pick');
+  const { data: allRes   } = await sb.from('results').select('match_id,winner');
   if (!allPreds || !allRes) return;
 
   const resMap = {};
-  allRes.forEach(r => { if (validIds.has(r.match_id)) resMap[r.match_id] = r.winner; });
+  allRes.forEach(r => { resMap[r.match_id] = r.winner; });
 
   const playerMap = {};
   allPreds.forEach(p => {
-    if (!validIds.has(p.match_id)) return;
     if (!playerMap[p.user_id]) playerMap[p.user_id] = { pts:0, corr:0, pred:0 };
     playerMap[p.user_id].pred++;
     const res = resMap[p.match_id];
-    if (res && res !== 'NR') {
-      let pts = 0;
-      if (res === 'TIE') pts = p.pick === 'TIE' ? 5 : 0;
-      else               pts = p.pick === res    ? 10 : 0;
-      playerMap[p.user_id].pts += pts;
+    if (res) {
+      const m = MATCHES.find(x => x.id === p.match_id);
+      const pts = res === 'NR' ? 0 : p.pick === res ? 10 : 0;
+      playerMap[p.user_id].pts  += pts;
       if (pts > 0) playerMap[p.user_id].corr++;
     }
   });
 
   for (const [uid, stats] of Object.entries(playerMap)) {
-    await sb.from('profiles').update({
-      total_pts: stats.pts,
-      correct:   stats.corr,
-      predicted: stats.pred,
-    }).eq('id', uid);
+    await sb.from('profiles').update({ total_pts: stats.pts, correct: stats.corr, predicted: stats.pred }).eq('id', uid);
   }
   await loadPlayers();
 }
@@ -497,94 +484,48 @@ function buildTicker() {
 
 // -- Match cards ----------------------------------------------
 function renderMatches() {
-  let vis = [...REAL_MATCHES];
+  let vis = REAL_MATCHES;
+  if      (activeFilt==='live')        vis = vis.filter(m=>!isMatchLocked(m)&&!allResults[m.id]&&secsUntilLock(m)<7200);
+  else if (activeFilt==='upcoming')    vis = vis.filter(m=>!allResults[m.id]&&!myPredictions[m.id]);
+  else if (activeFilt==='predicted')   vis = vis.filter(m=>!!myPredictions[m.id]);
+  else if (activeFilt==='unpredicted') vis = vis.filter(m=>!myPredictions[m.id]&&!allResults[m.id]);
+  else if (activeFilt==='completed')   vis = vis.filter(m=>!!allResults[m.id]);
+
   const phases = getLeagueConfig().phases;
   let html = '';
 
-  if (activeFilt === 'live') {
-    vis = vis.filter(m => !isMatchLocked(m) && !allResults[m.id] && secsUntilLock(m) < 7200);
-  } else if (activeFilt === 'upcoming') {
-    vis = vis.filter(m => !allResults[m.id] && !isMatchLocked(m));
-  } else if (activeFilt === 'predicted') {
-    vis = vis.filter(m => !!myPredictions[m.id]);
-  } else if (activeFilt === 'unpredicted') {
-    vis = vis.filter(m => !myPredictions[m.id] && !allResults[m.id] && !isMatchLocked(m));
-  } else if (activeFilt === 'completed') {
-    vis = vis.filter(m => !!allResults[m.id]);
-    // Show most recent completed first
-    vis.reverse();
-    phases.forEach(ph => {
-      const ms = vis.filter(m => ph.ids.includes(m.id));
-      if (!ms.length) return;
-      html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
-      ms.forEach(m => { html += matchCard(m); });
-      html += '</div>';
-    });
-    if (!html) html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No completed matches yet.</div>`;
-    document.getElementById('matches-out').innerHTML = html;
-    return;
-  }
-
   if (activeFilt === 'all') {
-    // ── "All" view: open/upcoming phases first, completed collapsed at bottom ──
-    const open      = vis.filter(m => !allResults[m.id]);
-    const completed = vis.filter(m => !!allResults[m.id]);
+    // Upcoming/live first, completed at bottom
+    const notDone = vis.filter(m => !allResults[m.id]);
+    const done    = vis.filter(m => !!allResults[m.id]);
 
-    // Open phases — in schedule order, skip empty phases
-    phases.forEach(ph => {
-      const ms = open.filter(m => ph.ids.includes(m.id));
-      if (!ms.length) return;
-      html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
-      ms.forEach(m => { html += matchCard(m); });
-      html += '</div>';
-    });
-
-    // Completed — collapsible summary at bottom, most-recent phase first
-    if (completed.length) {
-      const completedId = 'completed-section';
-      html += `
-        <div class="phase-hdr completed-toggle" style="margin-top:20px;cursor:pointer"
-          onclick="toggleCompleted()">
-          🏁 COMPLETED (${completed.length})
-          <span id="completed-chevron" style="margin-left:auto;font-size:12px;font-family:'DM Sans',sans-serif">▼ Show</span>
-        </div>
-        <div id="${completedId}" style="display:none">`;
-      // Group by phase, most-recent phase first
-      [...phases].reverse().forEach(ph => {
-        const ms = completed.filter(m => ph.ids.includes(m.id));
+    if (notDone.length) {
+      phases.forEach(ph => {
+        const ms = notDone.filter(m => ph.ids.includes(m.id));
         if (!ms.length) return;
-        html += `<div class="phase-hdr" style="font-size:12px;padding:12px 0 6px;border:none;color:var(--muted)">${ph.label}</div><div class="grid">`;
-        [...ms].reverse().forEach(m => { html += matchCard(m); });
+        html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
+        ms.forEach(m => { html += matchCard(m); });
         html += '</div>';
       });
-      html += '</div>';
     }
 
-    if (!open.length && !completed.length) {
-      html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No matches found.</div>`;
+    if (done.length) {
+      html += `<div class="phase-hdr" style="margin-top:24px">🏁 COMPLETED MATCHES</div><div class="grid">`;
+      [...done].reverse().forEach(m => { html += matchCard(m); });
+      html += '</div>';
     }
   } else {
-    // Filtered views (predicted, upcoming, etc.)
     phases.forEach(ph => {
-      const ms = vis.filter(m => ph.ids.includes(m.id));
+      const ms = vis.filter(m=>ph.ids.includes(m.id));
       if (!ms.length) return;
       html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
       ms.forEach(m => { html += matchCard(m); });
       html += '</div>';
     });
-    if (!html) html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No matches here.</div>`;
   }
 
+  if (!html) html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No matches here.</div>`;
   document.getElementById('matches-out').innerHTML = html;
-}
-
-function toggleCompleted() {
-  const sec = document.getElementById('completed-section');
-  const chev = document.getElementById('completed-chevron');
-  if (!sec) return;
-  const open = sec.style.display === 'none';
-  sec.style.display = open ? 'block' : 'none';
-  if (chev) chev.textContent = open ? '▲ Hide' : '▼ Show';
 }
 
 function rng(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
@@ -606,11 +547,10 @@ function matchCard(m) {
   else if (pred&&!locked) cardCls+=' predicted';
 
   let badge='OPEN', bc='b-open';
-  if (res)              {badge='RESULT IN'; bc='b-done';}
-  else if (isArchived()){badge='🗄 ARCHIVED'; bc='b-live';}
-  else if (locked)      {badge='🔒 LOCKED'; bc='b-live';}
-  else if (imminent)    {badge='⚠ CLOSING'; bc='b-live';}
-  else if (pred)        {badge='PREDICTED'; bc='b-pred';}
+  if (res)          {badge='RESULT IN'; bc='b-done';}
+  else if (locked)  {badge='🔒 LOCKED'; bc='b-live';}
+  else if (imminent){badge='⚠ CLOSING'; bc='b-live';}
+  else if (pred)    {badge='PREDICTED'; bc='b-pred';}
 
   function btnCls(team) {
     if (res) {
@@ -623,7 +563,7 @@ function matchCard(m) {
     return pred===team?'pbtn selected':'pbtn';
   }
 
-  const canPick = !locked && !res && !isArchived();
+  const canPick = !locked && !res;
   const o1=canPick?`onclick="pick(${m.id},'${m.t1}')"` :'';
   const o2=canPick?`onclick="pick(${m.id},'${m.t2}')"` :'';
 
@@ -638,10 +578,7 @@ function matchCard(m) {
   <div class="${cardCls}">
     <div class="mcard-top">
       <div class="mnum">MATCH ${m.id}${m.pl?' · '+m.label:''}</div>
-      <div style="display:flex;align-items:center;gap:6px">
-        ${m.network?`<span style="font-size:10px;font-weight:700;background:rgba(1,51,105,0.5);color:#7ba7d4;padding:2px 6px;border-radius:6px">${m.network}</span>`:''}
-        <div class="badge ${bc}">${badge}</div>
-      </div>
+      <div class="badge ${bc}">${badge}</div>
     </div>
     <div class="teams">
       <div class="team"><div class="t-emoji">${t1?.e||'👤'}</div><div class="t-code">${m.t1}</div><div class="t-name">${t1?.n||''}</div></div>
@@ -751,20 +688,71 @@ function updateHero() {
   document.getElementById('hdr-pts').textContent = pts+' PTS';
 }
 
+// -- Archived leaderboard (reads from leaderboard_archive table) --
+async function renderArchivedLeaderboard(tbody) {
+  const cfg    = getLeagueConfig();
+  const season = cfg.displayName.replace(' (Archive)', '').trim(); // e.g. "IPL 2026"
+
+  const { data, error } = await sb
+    .from('leaderboard_archive')
+    .select('*')
+    .eq('season', season)
+    .order('final_rank', { ascending: true });
+
+  if (error || !data?.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">No archive found for ' + season + '. Run the archive SQL first.</td></tr>';
+    // Update your position card
+    document.getElementById('lb-rank').textContent   = '—';
+    document.getElementById('lb-myname').textContent = 'You';
+    document.getElementById('lb-pts').textContent    = '—';
+    document.getElementById('lb-sub').textContent    = 'No archive data';
+    return;
+  }
+
+  const myRow = data.find(r => r.user_id === currentUser?.id);
+  document.getElementById('lb-rank').textContent   = myRow ? '#' + myRow.final_rank : '—';
+  document.getElementById('lb-myname').textContent = myRow?.display_name || 'You';
+  document.getElementById('lb-pts').textContent    = (myRow?.total_pts || 0) + ' PTS';
+  document.getElementById('lb-sub').textContent    = myRow
+    ? myRow.correct + ' correct · ' + myRow.predicted + ' predicted · Final standings'
+    : 'No picks in this season';
+
+  tbody.innerHTML = data.map(r => {
+    const isMe  = r.user_id === currentUser?.id;
+    const name  = r.display_name || r.email?.split('@')[0] || 'Player';
+    const av    = name[0].toUpperCase();
+    const color = strToColor(name);
+    const rk    = r.final_rank;
+    const rkCls = rk===1?'r1':rk===2?'r2':rk===3?'r3':'';
+    return `
+    <tr ${isMe ? 'class="you-row"' : ''}>
+      <td><div class="rk ${rkCls}">${rk}</div></td>
+      <td><div class="pnm">
+        <div class="av" style="background:${color}22;color:${color}">${av}</div>
+        <div><b>${name}${isMe ? ' (You)' : ''}</b></div>
+      </div></td>
+      <td style="color:var(--muted);font-size:13px">${r.correct}</td>
+      <td style="color:var(--muted);font-size:13px">${r.predicted}</td>
+      <td class="pts-c">${r.total_pts}</td>
+    </tr>`;
+  }).join('');
+}
+
 // -- Leaderboard -----------------------------------------------
 async function renderLeaderboard() {
   const tbody = document.getElementById('lb-body');
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">Loading…</td></tr>';
 
-  // ── Archived league → show the leaderboard_archive snapshot ──
+  // Archived league → show snapshot from leaderboard_archive table
   if (isArchived()) {
     await renderArchivedLeaderboard(tbody);
     return;
   }
 
-  // ── Active league → show live profiles ────────────────────────
-  try { await loadPlayers(); }
-  catch(e) {
+  try {
+    await loadPlayers();
+  } catch(e) {
+    console.error('renderLeaderboard loadPlayers failed:', e);
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">Failed to load — try refreshing.</td></tr>';
     return;
   }
@@ -774,76 +762,24 @@ async function renderLeaderboard() {
     return;
   }
 
-  renderLeaderboardTable(tbody, allPlayers, currentUser?.id);
-}
+  // Sort: points desc
+  const sorted = [...allPlayers].sort((a,b) => b.pts - a.pts);
 
-async function renderArchivedLeaderboard(tbody) {
-  const cfg = getLeagueConfig();
-  // e.g. 'IPL 2026'
-  const season = cfg.displayName.replace(' (Archive)', '').trim();
-
-  const { data, error } = await sb
-    .from('leaderboard_archive')
-    .select('*')
-    .eq('season', season)
-    .order('final_rank', { ascending: true });
-
-  if (error || !data?.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:13px;padding:20px">No archive found for ' + season + '.</td></tr>';
-    return;
-  }
-
-  // Show archive notice in "your position" card
-  const myRow = data.find(r => r.user_id === currentUser?.id);
-  if (myRow) {
-    document.getElementById('lb-rank').textContent   = '#' + myRow.final_rank;
-    document.getElementById('lb-myname').textContent = myRow.display_name || 'You';
-    document.getElementById('lb-pts').textContent    = myRow.total_pts + ' PTS';
-    document.getElementById('lb-sub').textContent    = `${myRow.correct} correct · ${myRow.predicted} predicted · Final standings`;
-  } else {
-    document.getElementById('lb-rank').textContent   = '—';
-    document.getElementById('lb-myname').textContent = 'You';
-    document.getElementById('lb-pts').textContent    = '0 PTS';
-    document.getElementById('lb-sub').textContent    = 'No picks in this season';
-  }
-
-  // Build archive rows (use strToColor for consistent avatars)
-  const rows = data.map(r => {
-    const isMe   = r.user_id === currentUser?.id;
-    const name   = r.display_name || r.email?.split('@')[0] || 'Player';
-    const avatar = name[0].toUpperCase();
-    const color  = strToColor(name);
-    const rank   = r.final_rank;
-    const rkCls  = rank===1?'r1':rank===2?'r2':rank===3?'r3':'';
-    return `
-    <tr ${isMe ? 'class="you-row"' : ''}>
-      <td><div class="rk ${rkCls}">${rank}</div></td>
-      <td><div class="pnm">
-        <div class="av" style="background:${color}22;color:${color}">${avatar}</div>
-        <div><b>${name}${isMe ? ' (You)' : ''}</b></div>
-      </div></td>
-      <td style="color:var(--muted);font-size:13px">${r.correct}</td>
-      <td style="color:var(--muted);font-size:13px">${r.predicted}</td>
-      <td class="pts-c">${r.total_pts}</td>
-    </tr>`;
-  }).join('');
-
-  tbody.innerHTML = rows;
-}
-
-function renderLeaderboardTable(tbody, players, myUid) {
-  const sorted = [...players].sort((a,b) => b.pts - a.pts || b.corr - a.corr);
-
-  // Standard competition ranking (1,2,2,4)
+  // UPDATED: Standard Competition Ranking (1, 2, 2, 4)
   const ranks = [];
-  let curRank = 1;
+  let currentRank = 1;
+  
   sorted.forEach((p, i) => {
-    if (i > 0 && p.pts !== sorted[i-1].pts) curRank = i + 1;
-    ranks.push(curRank);
+    // If points are different from the previous player, 
+    // the rank jumps to the current position (index + 1)
+    if (i > 0 && p.pts !== sorted[i-1].pts) {
+      currentRank = i + 1;
+    }
+    ranks.push(currentRank);
   });
 
-  const myIdx  = sorted.findIndex(p => p.uid === myUid);
-  const me     = sorted[myIdx] || {};
+  const myIdx = sorted.findIndex(p => p.uid === currentUser?.id);
+  const me    = sorted[myIdx] || {};
   const myRank = myIdx >= 0 ? ranks[myIdx] : '—';
 
   document.getElementById('lb-rank').textContent   = myRank;
@@ -852,11 +788,11 @@ function renderLeaderboardTable(tbody, players, myUid) {
   document.getElementById('lb-sub').textContent    = `${me.corr||0} correct · ${me.pred||0} predicted`;
 
   tbody.innerHTML = sorted.map((p, i) => {
-    const isMe  = p.uid === myUid;
+    const isMe  = p.uid === currentUser?.id;
     const r     = ranks[i];
     const rkCls = r===1?'r1':r===2?'r2':r===3?'r3':'';
     return `
-    <tr ${isMe ? 'class="you-row"' : ''}>
+    <tr ${isMe?'class="you-row"':''}>
       <td><div class="rk ${rkCls}">${r}</div></td>
       <td><div class="pnm">
         <div class="av" style="background:${p.color+'22'};color:${p.color}">${p.avatar}</div>
