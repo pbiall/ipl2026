@@ -256,19 +256,22 @@ async function loadAllData() {
 }
 
 async function loadResults() {
-  const { data } = await queryWithLeague('results', 'match_id,winner');
+  // Filter by match IDs of the current league to avoid cross-sport contamination
   const validIds = new Set(REAL_MATCHES.map(m => m.id));
+  const { data } = await sb.from('results').select('match_id,winner')
+    .in('match_id', [...validIds]);
   allResults = {};
-  if (data) data.filter(r => validIds.has(r.match_id)).forEach(r => { allResults[r.match_id] = r.winner; });
+  if (data) data.forEach(r => { allResults[r.match_id] = r.winner; });
 }
 
 async function loadMyPredictions() {
-  let q = sb.from('predictions').select('match_id,pick').eq('user_id', currentUser.id);
-  let { data, error } = await applyLeagueFilter(q);
-  if (error) ({ data } = await sb.from('predictions').select('match_id,pick').eq('user_id', currentUser.id));
+  // Filter by match IDs of the current league only
   const validIds = new Set(REAL_MATCHES.map(m => m.id));
+  const { data } = await sb.from('predictions').select('match_id,pick')
+    .eq('user_id', currentUser.id)
+    .in('match_id', [...validIds]);
   myPredictions = {};
-  if (data) data.filter(p => validIds.has(p.match_id)).forEach(p => { myPredictions[p.match_id] = p.pick; });
+  if (data) data.forEach(p => { myPredictions[p.match_id] = p.pick; });
 }
 
 async function loadPlayers() {
@@ -298,7 +301,9 @@ async function loadBroadcast() {
 // -- Load pick stats (aggregate + names for locked matches) --
 async function loadPickStats() {
   // Two separate queries — avoids needing a PostgREST FK relationship on predictions→profiles
-  let predsRes = await queryWithLeague('predictions', 'user_id, match_id, pick');
+  const validPickIds = new Set(REAL_MATCHES.map(m => m.id));
+  let predsRes = await sb.from('predictions').select('user_id, match_id, pick')
+    .in('match_id', [...validPickIds]);
   const { data: profiles } = await sb.from('profiles').select('id, display_name, email');
   const preds = predsRes.data;
   if (predsRes.error) { console.error('loadPickStats error:', predsRes.error.message); return; }
@@ -477,6 +482,15 @@ function renderApp() {
   updateHero();
 }
 
+function toggleSection(sectionId, chevId) {
+  const sec  = document.getElementById(sectionId);
+  const chev = document.getElementById(chevId);
+  if (!sec) return;
+  const opening = sec.style.display === 'none';
+  sec.style.display = opening ? 'block' : 'none';
+  if (chev) chev.textContent = opening ? '▲ Hide' : '▼ Show';
+}
+
 function buildTicker() {
   const t = REAL_MATCHES.slice(0,14).map(m=>`M${m.id}: ${m.t1} vs ${m.t2} · ${m.date}`).join('   |   ');
   document.getElementById('ticker-txt').textContent = t + '   |   ' + t;
@@ -495,24 +509,55 @@ function renderMatches() {
   let html = '';
 
   if (activeFilt === 'all') {
-    // Upcoming/live first, completed at bottom
-    const notDone = vis.filter(m => !allResults[m.id]);
-    const done    = vis.filter(m => !!allResults[m.id]);
+    const open      = vis.filter(m => !isMatchLocked(m) && !allResults[m.id]);
+    const locked    = vis.filter(m =>  isMatchLocked(m) && !allResults[m.id]);
+    const completed = vis.filter(m => !!allResults[m.id]);
 
-    if (notDone.length) {
+    // 1. Open (upcoming) — by phase
+    phases.forEach(ph => {
+      const ms = open.filter(m => ph.ids.includes(m.id));
+      if (!ms.length) return;
+      html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
+      ms.forEach(m => { html += matchCard(m); });
+      html += '</div>';
+    });
+
+    // 2. Locked awaiting result — collapsible
+    if (locked.length) {
+      html += `<div class="phase-hdr completed-toggle" style="cursor:pointer;margin-top:16px" onclick="toggleSection('awaiting-section','awaiting-chev')">
+        ⏳ AWAITING RESULTS (${locked.length})
+        <span id="awaiting-chev" style="margin-left:auto;font-size:12px;font-family:'DM Sans',sans-serif;font-weight:400">▼ Show</span>
+      </div>
+      <div id="awaiting-section" style="display:none">`;
       phases.forEach(ph => {
-        const ms = notDone.filter(m => ph.ids.includes(m.id));
+        const ms = locked.filter(m => ph.ids.includes(m.id));
         if (!ms.length) return;
-        html += `<div class="phase-hdr">${ph.label}</div><div class="grid">`;
+        html += `<div class="phase-hdr" style="font-size:12px;padding:10px 0 6px;border:none;color:var(--muted)">${ph.label}</div><div class="grid">`;
         ms.forEach(m => { html += matchCard(m); });
         html += '</div>';
       });
+      html += '</div>';
     }
 
-    if (done.length) {
-      html += `<div class="phase-hdr" style="margin-top:24px">🏁 COMPLETED MATCHES</div><div class="grid">`;
-      [...done].reverse().forEach(m => { html += matchCard(m); });
+    // 3. Completed — collapsible
+    if (completed.length) {
+      html += `<div class="phase-hdr completed-toggle" style="cursor:pointer;margin-top:16px" onclick="toggleSection('completed-section','completed-chev')">
+        🏁 COMPLETED (${completed.length})
+        <span id="completed-chev" style="margin-left:auto;font-size:12px;font-family:'DM Sans',sans-serif;font-weight:400">▼ Show</span>
+      </div>
+      <div id="completed-section" style="display:none">`;
+      [...phases].reverse().forEach(ph => {
+        const ms = completed.filter(m => ph.ids.includes(m.id));
+        if (!ms.length) return;
+        html += `<div class="phase-hdr" style="font-size:12px;padding:10px 0 6px;border:none;color:var(--muted)">${ph.label}</div><div class="grid">`;
+        [...ms].reverse().forEach(m => { html += matchCard(m); });
+        html += '</div>';
+      });
       html += '</div>';
+    }
+
+    if (!open.length && !locked.length && !completed.length) {
+      html = `<div style="color:var(--muted);font-size:14px;padding:20px 0">No matches found.</div>`;
     }
   } else {
     phases.forEach(ph => {
