@@ -29,7 +29,7 @@ let lastLockState = {};
 function applyLeagueFilter(query) {
   if (activeLeague === 'IPL') return query.or('league.eq.IPL,league.is.null');
   if (activeLeague === 'NFL') return query.eq('league', 'NFL');
-  return query.or(\`league.eq.\${activeLeague},league.is.null\`);
+  return query.or(`league.eq.${activeLeague},league.is.null`);
 }
 
 async function queryWithLeague(table, select) {
@@ -353,8 +353,8 @@ async function savePrediction(matchId, team) {
     return;
   }
   const { error } = await sb.from('predictions').upsert(
-    { user_id: currentUser.id, match_id: matchId, pick: team, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,match_id' }
+    { user_id: currentUser.id, match_id: matchId, pick: team, league: activeLeague, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,match_id,league' }
   );
   if (error) {
     toast('Pick not saved — ' + error.message, 'err');
@@ -376,15 +376,15 @@ async function refreshMyStats() {
 // -- Save result to Supabase (admin only) ---------------------
 async function saveResult(matchId, winner) {
   await sb.from('results').upsert(
-    { match_id: matchId, winner, set_by: currentUser.id, set_at: new Date().toISOString() },
-    { onConflict: 'match_id' }
+    { match_id: matchId, winner, league: activeLeague, set_by: currentUser.id, set_at: new Date().toISOString() },
+    { onConflict: 'match_id,league' }
   );
   // Recalculate points for all players (simplified: trigger full refresh)
   await recalcAllPlayerPoints();
 }
 
 async function clearResultDB(matchId) {
-  await sb.from('results').delete().eq('match_id', matchId);
+  await sb.from('results').delete().eq('match_id', matchId).eq('league', activeLeague);
   await recalcAllPlayerPoints();
 }
 
