@@ -256,22 +256,41 @@ async function loadAllData() {
 }
 
 async function loadResults() {
-  // Filter by match IDs of the current league to avoid cross-sport contamination
-  const validIds = new Set(REAL_MATCHES.map(m => m.id));
+  const validIds   = new Set(REAL_MATCHES.map(m => m.id));
+  const validTeams = new Set(Object.keys(TEAMS));
   const { data } = await sb.from('results').select('match_id,winner')
     .in('match_id', [...validIds]);
   allResults = {};
-  if (data) data.forEach(r => { allResults[r.match_id] = r.winner; });
+  if (data) {
+    data.forEach(r => {
+      // Only accept this result if winner is a team in the current league
+      // (or a special value). Prevents IPL results showing on NFL.
+      if (validTeams.has(r.winner) || r.winner === 'NR' || r.winner === 'TIE') {
+        allResults[r.match_id] = r.winner;
+      }
+    });
+  }
 }
 
 async function loadMyPredictions() {
-  // Filter by match IDs of the current league only
+  // Pull all predictions for this user, then filter client-side
+  // to only the match IDs that belong to the current league.
+  // This avoids needing a league column in the DB.
   const validIds = new Set(REAL_MATCHES.map(m => m.id));
+  // Also filter by the team codes — a pick for 'RCB' can't be an NFL pick
+  const validTeams = new Set(Object.keys(TEAMS));
   const { data } = await sb.from('predictions').select('match_id,pick')
     .eq('user_id', currentUser.id)
     .in('match_id', [...validIds]);
   myPredictions = {};
-  if (data) data.forEach(p => { myPredictions[p.match_id] = p.pick; });
+  if (data) {
+    data.forEach(p => {
+      // Only count this pick if the team belongs to the current league
+      if (validTeams.has(p.pick) || p.pick === 'TIE' || p.pick === 'NR') {
+        myPredictions[p.match_id] = p.pick;
+      }
+    });
+  }
 }
 
 async function loadPlayers() {
